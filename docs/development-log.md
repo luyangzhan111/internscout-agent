@@ -31,7 +31,12 @@
 - favicon.ico不是业务接口，可以暂时忽略
 - Pytest警告不影响当前两个测试通过，后续统一检查依赖兼容性
 
+### 已解决的疑问
+
+- FastAPI负责定义接口和处理请求，Uvicorn负责监听端口并运行FastAPI应用
+- git add将修改加入暂存区，git commit将暂存内容保存为正式版本
+
 ### 仍然不理解
 
-- FastAPI和Uvicorn之间更具体的关系
-- Git add和Git commit分别做什么
+- FastAPI为什么可以自动将Python字典转换成JSON
+- Pytest的fixture具体有什么作用
