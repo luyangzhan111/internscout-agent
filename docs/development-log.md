@@ -62,6 +62,37 @@
 - 模拟HTML可以让爬虫测试稳定且可重复
 - 开发新功能前应先运行旧测试建立基线
 
+### Codex代码审查
+
+本次使用Codex对以下文件进行了只读审查：
+
+- app/schemas/job.py
+- app/schemas/__init__.py
+- tests/test_job_schema.py
+- app/fixtures/sample_jobs.html
+
+#### 审查结论
+
+- 当前岗位模型与模拟HTML整体结构一致
+- 6条模拟岗位的ID和链接具有唯一性
+- 至少存在一条缺少薪资字段的边界样例
+- 没有发现阻塞下一阶段的模型或HTML错误
+- 可以进入模拟爬虫解析阶段
+
+#### 后续需要处理
+
+- 爬虫创建JobCreate时注入source="mock"
+- HTML没有salary标签时解析为None
+- 后续补充HTML到JobCreate的集成测试
+- 数据清洗阶段处理技能去重和标准化
+- 后续评估是否将source_url改为URL验证类型
+
+#### Codex使用体会
+
+- 先限定只读权限，可以避免工具直接修改代码
+- Codex的建议需要结合当前项目阶段判断，并非全部立即实施
+- 最终仍需通过git status、git diff和pytest确认结果
+
 ### 遇到的问题
 
 根据实际情况填写。
