@@ -235,3 +235,120 @@
 - 将处理后的岗位数据保存到数据库
 - 提供岗位查询和筛选接口
 - 根据真实数据逐步扩充城市和技能别名
+
+## 阶段5：SQLite数据库与岗位持久化
+
+### 本阶段完成
+
+- 安装并引入SQLAlchemy 2.x
+- 使用SQLite作为项目第一版持久化数据库
+- 创建JobModel岗位ORM模型
+- 定义jobs数据库表及字段约束
+- 使用JSON字段保存岗位技能列表
+- 为岗位身份identity_key增加唯一约束
+- 实现数据库Engine和Session工厂
+- 实现数据库表初始化函数
+- 实现岗位模型转换、保存和查询Repository
+- 重复保存岗位时返回已有数据库记录
+- 捕获唯一约束竞争产生的IntegrityError
+- 实现批量岗位保存并保持首次出现顺序
+- 实现爬虫、清洗、去重和入库的完整工作流
+- 使用临时SQLite文件完成自动化测试
+- 完成正式数据库手动验证
+- 完成Codex只读代码审查
+- 全项目59个测试通过
+
+### 完整数据链路
+
+模拟招聘HTML
+→ MockJobCrawler
+→ JobCreate
+→ process_jobs
+→ 城市和技能标准化
+→ 岗位去重
+→ ingest_jobs
+→ save_jobs
+→ SQLite jobs表
+
+### 数据库设计
+
+jobs表包含：
+
+- id
+- identity_key
+- title
+- company
+- city
+- salary
+- description
+- skills
+- source
+- source_url
+- published_at
+- created_at
+
+identity_key由标准化后的公司名称、岗位名称和城市组成，并通过数据库唯一约束防止重复写入。
+
+### 重复岗位保护
+
+项目目前具有三层重复保护：
+
+1. process_jobs负责当前输入列表内的业务去重
+2. save_job保存前查询数据库是否已有相同身份
+3. jobs.identity_key数据库唯一约束处理竞争窗口
+
+发生预期唯一约束冲突时：
+
+提交失败
+→ rollback
+→ 查询已有岗位
+→ 返回已有记录
+
+如果回滚后找不到对应身份记录，则重新抛出IntegrityError，避免掩盖其他数据库约束错误。
+
+### 事务契约
+
+当前save_job会直接提交调用方传入的Session。
+
+save_jobs采用逐条提交策略：
+
+- 已成功保存的岗位不会因后续岗位失败而回滚
+- 适合当前小批量模拟岗位
+- 调用方应使用专门用于岗位持久化的Session
+- 不应在同一Session中混入无关的未提交数据
+
+后续数据量扩大后，可以将事务边界移动到工作流层，并评估批量原子事务。
+
+### Codex审查结果
+
+必须修改：无。
+
+建议内容包括：
+
+- 明确Repository的事务边界
+- 明确Repository只接收已清洗岗位
+- 后续评估identity_key字段长度或固定哈希
+- 增加IntegrityError无法匹配岗位时重新抛出的测试
+- 后续将数据库路径改为配置注入
+- 失败测试中应确保Engine可靠释放
+
+本阶段补充了Repository输入契约、事务契约和IntegrityError重新抛出回归测试。
+
+### 当前技术债
+
+- 默认SQLite路径依赖进程工作目录
+- 默认Engine在模块导入时创建
+- 批量岗位采用逐条提交，非原子事务
+- identity_key使用JSON字符串而非固定长度哈希
+- 尚未引入Alembic数据库迁移
+- 尚未提供岗位数据库API
+- 尚未实现数据库分页和条件筛选
+- FastAPI TestClient仍存在Starlette弃用警告
+
+### 后续计划
+
+- 为岗位数据库提供查询API
+- 支持城市、公司和技能筛选
+- 增加分页参数
+- 将数据库Session接入FastAPI依赖注入
+- 后续根据数据库结构变化引入Alembic
