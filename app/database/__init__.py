@@ -6,6 +6,7 @@ from app.database.repository import (
     get_job_by_identity_key,
     job_model_from_schema,
     list_jobs,
+    query_jobs,
     save_job,
     save_jobs,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "init_database",
     "job_model_from_schema",
     "list_jobs",
+    "query_jobs",
     "save_job",
     "save_jobs",
 ]

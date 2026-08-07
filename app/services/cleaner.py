@@ -37,12 +37,21 @@ SKILL_ALIASES: dict[str, str] = {
 }
 
 
+def normalize_company(company: str) -> str:
+    """删除公司名称首尾空白，并合并连续空白。"""
+
+    return " ".join(company.split())
+
+
 def normalize_city(city: str) -> str:
     """标准化已知城市别名，未知城市名称保持不变。"""
 
     normalized = " ".join(city.split())
 
-    return CITY_ALIASES.get(normalized, normalized)
+    return CITY_ALIASES.get(
+        normalized,
+        normalized,
+    )
 
 
 def normalize_skill(skill: str) -> str:
@@ -59,7 +68,9 @@ def normalize_skill(skill: str) -> str:
     )
 
 
-def normalize_skills(skills: list[str]) -> list[str]:
+def normalize_skills(
+    skills: list[str],
+) -> list[str]:
     """标准化技能列表，并在保持顺序的情况下去重。"""
 
     normalized_skills: list[str] = []
@@ -88,8 +99,15 @@ def clean_job(job: JobCreate) -> JobCreate:
     job_data = job.model_dump()
     job_data.update(
         {
-            "city": normalize_city(job.city),
-            "skills": normalize_skills(job.skills),
+            "company": normalize_company(
+                job.company
+            ),
+            "city": normalize_city(
+                job.city
+            ),
+            "skills": normalize_skills(
+                job.skills
+            ),
         }
     )
 

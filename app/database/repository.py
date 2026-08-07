@@ -2,13 +2,25 @@
 
 import json
 
-from sqlalchemy import select
+from sqlalchemy import (
+    exists,
+    func,
+    select,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.database.models import JobModel
 from app.schemas.job import JobCreate
-from app.services.deduplicator import build_job_identity
+from app.services.cleaner import (
+    normalize_city,
+    normalize_company,
+    normalize_skill,
+)
+from app.services.deduplicator import (
+    build_job_identity,
+)
 
 
 def build_identity_key(job: JobCreate) -> str:
@@ -23,13 +35,15 @@ def build_identity_key(job: JobCreate) -> str:
     )
 
 
-def job_model_from_schema(job: JobCreate) -> JobModel:
+def job_model_from_schema(
+    job: JobCreate,
+) -> JobModel:
     """
     将经过验证和清洗的JobCreate转换为数据库ORM对象。
 
     输入契约：
     岗位应当已经经过process_jobs处理。本函数不会再次执行
-    城市和技能标准化。
+    城市、公司和技能标准化。
     """
 
     return JobModel(
@@ -133,6 +147,7 @@ def save_jobs(
             continue
 
         seen_identity_keys.add(identity_key)
+
         saved_jobs.append(
             save_job(
                 session,
@@ -143,11 +158,153 @@ def save_jobs(
     return saved_jobs
 
 
-def list_jobs(session: Session) -> list[JobModel]:
+def list_jobs(
+    session: Session,
+) -> list[JobModel]:
     """按照数据库主键顺序查询全部岗位。"""
 
     statement = select(JobModel).order_by(
         JobModel.id
     )
 
-    return list(session.scalars(statement))
+    return list(
+        session.scalars(statement)
+    )
+
+
+def _build_job_filter_conditions(
+    *,
+    city: str | None,
+    company: str | None,
+    skill: str | None,
+) -> list[ColumnElement[bool]]:
+    """根据查询参数构建岗位筛选条件。"""
+
+    conditions: list[ColumnElement[bool]] = []
+
+    if city is not None:
+        normalized_city = normalize_city(city)
+
+        if not normalized_city:
+            raise ValueError(
+                "city不能只包含空白字符"
+            )
+
+        conditions.append(
+            func.lower(JobModel.city)
+            == normalized_city.lower()
+        )
+
+    if company is not None:
+        normalized_company = normalize_company(
+            company
+        )
+
+        if not normalized_company:
+            raise ValueError(
+                "company不能只包含空白字符"
+            )
+
+        conditions.append(
+            func.lower(JobModel.company)
+            == normalized_company.lower()
+        )
+
+    if skill is not None:
+        normalized_skill = normalize_skill(skill)
+
+        if not normalized_skill:
+            raise ValueError(
+                "skill不能只包含空白字符"
+            )
+
+        skill_values = (
+            func.json_each(JobModel.skills)
+            .table_valued("value")
+            .alias("skill_values")
+        )
+
+        conditions.append(
+            exists(
+                select(1)
+                .select_from(skill_values)
+                .where(
+                    func.lower(
+                        skill_values.c.value
+                    )
+                    == normalized_skill.lower()
+                )
+            )
+        )
+
+    return conditions
+
+
+def query_jobs(
+    session: Session,
+    *,
+    city: str | None = None,
+    company: str | None = None,
+    skill: str | None = None,
+    page: int = 1,
+    page_size: int = 10,
+) -> tuple[list[JobModel], int]:
+    """
+    按条件筛选并分页查询岗位。
+
+    返回值：
+    - 当前页岗位列表；
+    - 符合筛选条件的岗位总数。
+
+    公司、城市和技能均采用精确匹配。
+    英文字母比较不区分大小写。
+    """
+
+    if page < 1:
+        raise ValueError(
+            "page必须大于或等于1"
+        )
+
+    if page_size < 1 or page_size > 100:
+        raise ValueError(
+            "page_size必须在1到100之间"
+        )
+
+    conditions = _build_job_filter_conditions(
+        city=city,
+        company=company,
+        skill=skill,
+    )
+
+    count_statement = (
+        select(func.count())
+        .select_from(JobModel)
+        .where(*conditions)
+    )
+
+    total = (
+        session.scalar(count_statement)
+        or 0
+    )
+
+    if total == 0:
+        return [], 0
+
+    offset = (page - 1) * page_size
+
+    if offset >= total:
+        return [], total
+
+    items_statement = (
+        select(JobModel)
+        .where(*conditions)
+        .order_by(JobModel.id)
+        .offset(offset)
+        .limit(page_size)
+    )
+
+    items = list(
+        session.scalars(items_statement)
+    )
+
+    return items, total
