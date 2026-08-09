@@ -8,12 +8,15 @@ from app.schemas.job import JobCreate
 from app.services import (
     clean_job,
     normalize_city,
+    normalize_company,
     normalize_skill,
     normalize_skills,
 )
 
 
-def create_job(**overrides: object) -> JobCreate:
+def create_job(
+    **overrides: object,
+) -> JobCreate:
     """创建用于清洗测试的合法岗位。"""
 
     job_data = {
@@ -22,9 +25,15 @@ def create_job(**overrides: object) -> JobCreate:
         "city": "深圳市",
         "salary": "150-200元/天",
         "description": "负责后端接口开发。",
-        "skills": ["python", "FASTAPI", "SQL"],
+        "skills": [
+            "python",
+            "FASTAPI",
+            "SQL",
+        ],
         "source": "mock",
-        "source_url": "https://example.com/jobs/001",
+        "source_url": (
+            "https://example.com/jobs/001"
+        ),
         "published_at": "2026-07-20",
     }
     job_data.update(overrides)
@@ -32,8 +41,16 @@ def create_job(**overrides: object) -> JobCreate:
     return JobCreate(**job_data)
 
 
+def test_normalize_company_collapses_whitespace() -> None:
+    """公司名称应删除首尾空白并合并连续空白。"""
+
+    assert normalize_company(
+        " Example   Tech "
+    ) == "Example Tech"
+
+
 def test_normalize_city_removes_city_suffix() -> None:
-    """已知城市名称应当转换为项目约定的规范形式。"""
+    """已知城市别名应转换为规范名称。"""
 
     assert normalize_city("深圳市") == "深圳"
     assert normalize_city(" 广州市 ") == "广州"
@@ -48,17 +65,21 @@ def test_normalize_city_keeps_normal_city_name() -> None:
 
 
 def test_normalize_skill_uses_canonical_name() -> None:
-    """技能名称应当转换为项目约定的展示形式。"""
+    """技能名称应转换为项目约定的展示形式。"""
 
     assert normalize_skill(" python ") == "Python"
     assert normalize_skill("FASTAPI") == "FastAPI"
     assert normalize_skill("PYTEST") == "pytest"
-    assert normalize_skill("beautifulsoup4") == "Beautiful Soup"
-    assert normalize_skill("beautiful   soup") == "Beautiful Soup"
+    assert normalize_skill(
+        "beautifulsoup4"
+    ) == "Beautiful Soup"
+    assert normalize_skill(
+        "beautiful   soup"
+    ) == "Beautiful Soup"
 
 
 def test_normalize_skills_removes_blank_and_duplicates() -> None:
-    """技能列表应当清除空白值和重复技能。"""
+    """技能列表应清除空白值和重复技能。"""
 
     skills = normalize_skills(
         [
@@ -82,6 +103,7 @@ def test_clean_job_returns_cleaned_copy() -> None:
     """清洗函数应返回新对象，并保留原始岗位不变。"""
 
     original_job = create_job(
+        company=" Example   Tech ",
         city="深圳市",
         skills=[
             "python",
@@ -94,6 +116,7 @@ def test_clean_job_returns_cleaned_copy() -> None:
 
     cleaned_job = clean_job(original_job)
 
+    assert cleaned_job.company == "Example Tech"
     assert cleaned_job.city == "深圳"
     assert cleaned_job.skills == [
         "Python",
@@ -101,6 +124,7 @@ def test_clean_job_returns_cleaned_copy() -> None:
         "SQL",
     ]
 
+    assert original_job.company == "Example   Tech"
     assert original_job.city == "深圳市"
     assert original_job.skills == [
         "python",

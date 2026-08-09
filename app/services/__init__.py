@@ -3,6 +3,7 @@
 from app.services.cleaner import (
     clean_job,
     normalize_city,
+    normalize_company,
     normalize_skill,
     normalize_skills,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "clean_job",
     "deduplicate_jobs",
     "normalize_city",
+    "normalize_company",
     "normalize_skill",
     "normalize_skills",
     "process_jobs",
