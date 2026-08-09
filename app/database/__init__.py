@@ -3,6 +3,7 @@
 from app.database.models import Base, JobModel
 from app.database.repository import (
     build_identity_key,
+    get_job_by_id,
     get_job_by_identity_key,
     job_model_from_schema,
     list_jobs,
@@ -29,6 +30,7 @@ __all__ = [
     "create_database_engine",
     "create_session_factory",
     "database_engine",
+    "get_job_by_id",
     "get_job_by_identity_key",
     "get_session",
     "init_database",

@@ -6,11 +6,13 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Path,
     Query,
 )
 from sqlalchemy.orm import Session
 
 from app.database import (
+    get_job_by_id,
     get_session,
     query_jobs,
 )
@@ -35,7 +37,9 @@ def _normalize_optional_query(
     if value is None:
         return None
 
-    normalized = " ".join(value.split())
+    normalized = " ".join(
+        value.split()
+    )
 
     if not normalized:
         raise HTTPException(
@@ -101,37 +105,45 @@ def read_jobs(
 ) -> JobListResponse:
     """按照筛选条件分页查询数据库岗位。"""
 
-    normalized_city = _normalize_optional_query(
+    city = _normalize_optional_query(
         city,
         "city",
     )
-    normalized_company = _normalize_optional_query(
+    company = _normalize_optional_query(
         company,
         "company",
     )
-    normalized_skill = _normalize_optional_query(
+    skill = _normalize_optional_query(
         skill,
         "skill",
     )
 
     database_jobs, total = query_jobs(
         session,
-        city=normalized_city,
-        company=normalized_company,
-        skill=normalized_skill,
+        city=city,
+        company=company,
+        skill=skill,
         page=page,
         page_size=page_size,
     )
 
     pages = (
-        (total + page_size - 1) // page_size
+        (
+            total
+            + page_size
+            - 1
+        )
+        // page_size
         if total > 0
         else 0
     )
 
     response_items = [
-        JobRead.model_validate(database_job)
-        for database_job in database_jobs
+        JobRead.model_validate(
+            database_job
+        )
+        for database_job
+        in database_jobs
     ]
 
     return JobListResponse(
@@ -140,4 +152,40 @@ def read_jobs(
         page=page,
         page_size=page_size,
         pages=pages,
+    )
+
+
+@router.get(
+    "/{job_id}",
+    response_model=JobRead,
+    summary="查询岗位详情",
+)
+def read_job(
+    job_id: Annotated[
+        int,
+        Path(
+            ge=1,
+            description="岗位数据库ID",
+        ),
+    ],
+    session: Annotated[
+        Session,
+        Depends(get_session),
+    ],
+) -> JobRead:
+    """根据数据库主键查询单个岗位。"""
+
+    database_job = get_job_by_id(
+        session,
+        job_id,
+    )
+
+    if database_job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="岗位不存在",
+        )
+
+    return JobRead.model_validate(
+        database_job
     )

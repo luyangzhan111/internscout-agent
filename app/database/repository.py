@@ -2,11 +2,7 @@
 
 import json
 
-from sqlalchemy import (
-    exists,
-    func,
-    select,
-)
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -18,9 +14,7 @@ from app.services.cleaner import (
     normalize_company,
     normalize_skill,
 )
-from app.services.deduplicator import (
-    build_job_identity,
-)
+from app.services.deduplicator import build_job_identity
 
 
 def build_identity_key(job: JobCreate) -> str:
@@ -35,9 +29,7 @@ def build_identity_key(job: JobCreate) -> str:
     )
 
 
-def job_model_from_schema(
-    job: JobCreate,
-) -> JobModel:
+def job_model_from_schema(job: JobCreate) -> JobModel:
     """
     将经过验证和清洗的JobCreate转换为数据库ORM对象。
 
@@ -71,6 +63,18 @@ def get_job_by_identity_key(
     )
 
     return session.scalar(statement)
+
+
+def get_job_by_id(
+    session: Session,
+    job_id: int,
+) -> JobModel | None:
+    """根据数据库主键查询岗位。"""
+
+    return session.get(
+        JobModel,
+        job_id,
+    )
 
 
 def save_job(
@@ -163,8 +167,9 @@ def list_jobs(
 ) -> list[JobModel]:
     """按照数据库主键顺序查询全部岗位。"""
 
-    statement = select(JobModel).order_by(
-        JobModel.id
+    statement = (
+        select(JobModel)
+        .order_by(JobModel.id)
     )
 
     return list(
@@ -282,15 +287,16 @@ def query_jobs(
         .where(*conditions)
     )
 
-    total = (
-        session.scalar(count_statement)
-        or 0
-    )
+    total = session.scalar(
+        count_statement
+    ) or 0
 
     if total == 0:
         return [], 0
 
-    offset = (page - 1) * page_size
+    offset = (
+        page - 1
+    ) * page_size
 
     if offset >= total:
         return [], total
@@ -304,7 +310,9 @@ def query_jobs(
     )
 
     items = list(
-        session.scalars(items_statement)
+        session.scalars(
+            items_statement
+        )
     )
 
     return items, total
