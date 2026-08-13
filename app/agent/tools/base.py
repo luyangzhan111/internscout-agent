@@ -3,7 +3,11 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from app.agent.contracts import ToolCall, ToolResult
+from app.agent.contracts import (
+    ToolCall,
+    ToolDefinition,
+    ToolResult,
+)
 
 
 ArgumentsT = TypeVar(
@@ -18,6 +22,15 @@ class BaseTool(ABC, Generic[ArgumentsT]):
     name: str
     description: str
     args_schema: type[ArgumentsT]
+
+    def definition(self) -> ToolDefinition:
+        """Return the provider-neutral definition exposed to models."""
+
+        return ToolDefinition(
+            name=self.name,
+            description=self.description,
+            parameters=self.args_schema.model_json_schema(),
+        )
 
     def execute(
         self,

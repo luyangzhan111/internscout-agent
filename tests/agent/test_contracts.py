@@ -4,11 +4,48 @@ from pydantic import ValidationError
 from app.agent.contracts import (
     AgentResult,
     FinalAnswerResponse,
+    ModelRequest,
     ToolCall,
     ToolCallResponse,
+    ToolDefinition,
     ToolExecution,
     ToolResult,
 )
+
+
+def test_tool_definition_stores_model_facing_contract() -> None:
+    definition = ToolDefinition(
+        name="search_jobs",
+        description="Search stored jobs.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                },
+            },
+        },
+    )
+
+    assert definition.name == "search_jobs"
+    assert definition.description == "Search stored jobs."
+    assert definition.parameters["type"] == "object"
+
+
+def test_tool_definition_rejects_empty_name() -> None:
+    with pytest.raises(ValidationError):
+        ToolDefinition(
+            name="",
+            description="Search stored jobs.",
+        )
+
+
+def test_tool_definition_rejects_empty_description() -> None:
+    with pytest.raises(ValidationError):
+        ToolDefinition(
+            name="search_jobs",
+            description="",
+        )
 
 
 def test_tool_call_stores_name_id_and_arguments() -> None:
@@ -169,6 +206,50 @@ def test_tool_execution_rejects_mismatched_tool_name() -> None:
             call=tool_call,
             result=result,
         )
+
+
+def test_model_request_has_expected_defaults() -> None:
+    request = ModelRequest(
+        user_message="帮我找深圳的 Python 实习岗位"
+    )
+
+    assert request.user_message == (
+        "帮我找深圳的 Python 实习岗位"
+    )
+    assert request.tool_executions == []
+    assert request.tools == []
+
+
+def test_model_request_stores_executions_and_tools() -> None:
+    execution = ToolExecution(
+        call=ToolCall(
+            call_id="call_001",
+            tool_name="search_jobs",
+            arguments={"city": "深圳"},
+        ),
+        result=ToolResult(
+            call_id="call_001",
+            tool_name="search_jobs",
+            success=True,
+            data={"items": []},
+        ),
+    )
+    definition = ToolDefinition(
+        name="search_jobs",
+        description="Search stored jobs.",
+        parameters={
+            "type": "object",
+        },
+    )
+
+    request = ModelRequest(
+        user_message="找深圳岗位",
+        tool_executions=[execution],
+        tools=[definition],
+    )
+
+    assert request.tool_executions == [execution]
+    assert request.tools == [definition]
 
 
 def test_tool_call_response_has_tool_call_discriminator() -> None:

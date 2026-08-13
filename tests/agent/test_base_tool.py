@@ -49,6 +49,20 @@ class FailingTool(
         )
 
 
+def test_base_tool_builds_provider_neutral_definition() -> None:
+    tool = DummyTool()
+
+    definition = tool.definition()
+
+    assert definition.name == "dummy"
+    assert definition.description == (
+        "A test-only dummy tool."
+    )
+    assert definition.parameters == (
+        DummyArguments.model_json_schema()
+    )
+
+
 def test_base_tool_executes_valid_tool_call() -> None:
     tool = DummyTool()
 

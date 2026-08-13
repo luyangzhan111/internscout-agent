@@ -119,3 +119,32 @@ def test_registry_preserves_registration_order() -> None:
         "second",
         "first",
     ]
+
+
+def test_registry_lists_model_definitions_in_registration_order() -> None:
+    registry = ToolRegistry()
+
+    registry.register(
+        FirstTool()
+    )
+    registry.register(
+        SecondTool()
+    )
+
+    definitions = registry.list_definitions()
+
+    assert [
+        definition.name
+        for definition
+        in definitions
+    ] == [
+        "first",
+        "second",
+    ]
+
+    assert definitions[0].description == (
+        "First test tool."
+    )
+    assert definitions[0].parameters == (
+        EmptyArguments.model_json_schema()
+    )

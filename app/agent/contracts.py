@@ -1,6 +1,20 @@
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    model_validator,
+)
+
+
+class ToolDefinition(BaseModel):
+    """Provider-neutral description of one available agent tool."""
+
+    name: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    parameters: dict[str, Any] = Field(
+        default_factory=dict
+    )
 
 
 class ToolCall(BaseModel):
@@ -8,7 +22,9 @@ class ToolCall(BaseModel):
 
     call_id: str = Field(min_length=1)
     tool_name: str = Field(min_length=1)
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(
+        default_factory=dict
+    )
 
 
 class ToolResult(BaseModel):
@@ -57,6 +73,18 @@ class ToolExecution(BaseModel):
         return self
 
 
+class ModelRequest(BaseModel):
+    """Provider-neutral input passed from the agent to a model client."""
+
+    user_message: str = Field(min_length=1)
+    tool_executions: list[ToolExecution] = Field(
+        default_factory=list
+    )
+    tools: list[ToolDefinition] = Field(
+        default_factory=list
+    )
+
+
 class ToolCallResponse(BaseModel):
     """A model response requesting one tool execution."""
 
@@ -71,12 +99,17 @@ class FinalAnswerResponse(BaseModel):
     answer: str = Field(min_length=1)
 
 
-ModelResponse: TypeAlias = ToolCallResponse | FinalAnswerResponse
+ModelResponse: TypeAlias = (
+    ToolCallResponse
+    | FinalAnswerResponse
+)
 
 
 class AgentResult(BaseModel):
     """The successful final result of one agent run."""
 
     answer: str = Field(min_length=1)
-    tool_executions: list[ToolExecution] = Field(default_factory=list)
+    tool_executions: list[ToolExecution] = Field(
+        default_factory=list
+    )
     steps: int = Field(ge=0)

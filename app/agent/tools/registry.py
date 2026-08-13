@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.agent.contracts import ToolDefinition
 from app.agent.tools.base import BaseTool
 
 
@@ -46,3 +47,13 @@ class ToolRegistry:
         return list(
             self._tools.values()
         )
+
+    def list_definitions(
+        self,
+    ) -> list[ToolDefinition]:
+        """Return model-facing definitions in registration order."""
+
+        return [
+            tool.definition()
+            for tool in self._tools.values()
+        ]
