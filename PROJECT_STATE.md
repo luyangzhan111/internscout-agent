@@ -39,8 +39,14 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - 查询 Repository
 - REST API
 - 筛选与分页
-- 端到端测试
-- 后续 Agent 能力
+- HTTP 服务闭环
+- 自动化测试
+- Agent Contract
+- Tool System
+- Model Client Abstraction
+- Tool-Calling Agent Runtime
+- Agent Orchestrator
+- Tool / Repository 架构解耦
 
 项目同时承担以下学习目标：
 
@@ -52,13 +58,16 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - SQLAlchemy
 - SQLite
 - Repository Pattern
+- Port / Adapter Pattern
 - pytest
+- Unit Testing
 - Integration Testing
 - Git / GitHub / Pull Request Workflow
 - Codex Code Review
 - Agent Development
+- Tool Calling
 - 软件工程面试准备
-- 实习简历项目积累
+- AI / Agent 岗位项目积累
 
 ---
 
@@ -86,50 +95,9 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 
 ---
 
-# 3. Current Stage
+# 3. Current Version Identity
 
-## 已完成阶段
-
-Stage 0 ～ Stage 6
-
-## 当前状态
-
-Stage 6：
-
-**已完成并合并至 main。**
-
-Stage 6 最终完成：
-
-- 岗位列表 API
-- 岗位详情 API
-- 多条件筛选
-- 分页
-- 查询 Repository
-- Response Schema
-- API 参数校验
-- 极端分页边界处理
-- FastAPI 生命周期数据库初始化
-- API 集成测试
-- Stage 6 端到端流程测试
-- 重复抓取幂等性验证
-
-## 下一阶段
-
-Stage 7
-
-Stage 7 将开始在现有数据采集、处理、数据库和 API 基础设施之上进一步构建 Agent 能力。
-
----
-
-# 4. Implemented Capabilities
-
-## 4.1 FastAPI Application
-
-已经建立 FastAPI 应用。
-
-目前主要 HTTP API 包括：
+## 当前主分支
 
 ```text
-GET /api/health
-GET /api/jobs
-GET /api/jobs/{job_id}
+main
