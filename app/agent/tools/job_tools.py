@@ -5,17 +5,10 @@ from pydantic import (
     Field,
     field_validator,
 )
-from sqlalchemy.orm import Session
 
 from app.agent.tools.base import BaseTool
-from app.database.repository import (
-    get_job_by_id,
-    query_jobs,
-)
-from app.schemas.job_response import (
-    JobListResponse,
-    JobRead,
-)
+from app.agent.tools.job_query import JobQueryPort
+from app.schemas.job_response import JobListResponse
 
 
 class SearchJobsArguments(BaseModel):
@@ -101,30 +94,21 @@ class SearchJobsTool(
 
     def __init__(
         self,
-        session: Session,
+        job_query: JobQueryPort,
     ) -> None:
-        self._session = session
+        self._job_query = job_query
 
     def _run(
         self,
         arguments: SearchJobsArguments,
     ) -> dict[str, Any]:
-        database_jobs, total = query_jobs(
-            self._session,
+        jobs, total = self._job_query.search_jobs(
             city=arguments.city,
             company=arguments.company,
             skill=arguments.skill,
             page=arguments.page,
             page_size=arguments.page_size,
         )
-
-        response_items = [
-            JobRead.model_validate(
-                database_job
-            )
-            for database_job
-            in database_jobs
-        ]
 
         pages = (
             (
@@ -138,7 +122,7 @@ class SearchJobsTool(
         )
 
         response = JobListResponse(
-            items=response_items,
+            items=jobs,
             total=total,
             page=arguments.page,
             page_size=arguments.page_size,
@@ -164,25 +148,20 @@ class GetJobDetailTool(
 
     def __init__(
         self,
-        session: Session,
+        job_query: JobQueryPort,
     ) -> None:
-        self._session = session
+        self._job_query = job_query
 
     def _run(
         self,
         arguments: GetJobDetailArguments,
     ) -> dict[str, Any] | None:
-        database_job = get_job_by_id(
-            self._session,
-            arguments.job_id,
+        job = self._job_query.get_job_by_id(
+            arguments.job_id
         )
 
-        if database_job is None:
+        if job is None:
             return None
-
-        job = JobRead.model_validate(
-            database_job
-        )
 
         return job.model_dump(
             mode="json"

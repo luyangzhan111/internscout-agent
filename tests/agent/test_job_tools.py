@@ -1,20 +1,19 @@
 from datetime import date, datetime
-from types import SimpleNamespace
-from typing import Any
 
 from app.agent.contracts import ToolCall
-from app.agent.tools import job_tools
+from app.agent.tools.job_query import JobQueryPort
 from app.agent.tools.job_tools import (
     GetJobDetailTool,
     SearchJobsTool,
 )
+from app.schemas.job_response import JobRead
 
 
-def make_job_record(
+def make_job_read(
     *,
     job_id: int = 1,
-) -> SimpleNamespace:
-    return SimpleNamespace(
+) -> JobRead:
+    return JobRead(
         id=job_id,
         title="AI 应用开发实习生",
         company="示例科技",
@@ -45,31 +44,84 @@ def make_job_record(
     )
 
 
-def test_search_jobs_tool_uses_normalized_filters_and_defaults(
-    monkeypatch: Any,
-) -> None:
-    captured: dict[str, Any] = {}
-    session = object()
+class FakeJobQuery(JobQueryPort):
+    """Controllable job-query fake used by Agent Tool unit tests."""
 
-    def fake_query_jobs(
-        received_session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        captured["session"] = received_session
-        captured.update(kwargs)
+    def __init__(
+        self,
+        *,
+        search_items: list[JobRead] | None = None,
+        search_total: int = 0,
+        detail_result: JobRead | None = None,
+        search_error: Exception | None = None,
+        detail_error: Exception | None = None,
+    ) -> None:
+        self.search_items = (
+            search_items
+            if search_items is not None
+            else []
+        )
+        self.search_total = search_total
+        self.detail_result = detail_result
+        self.search_error = search_error
+        self.detail_error = detail_error
 
-        return [
-            make_job_record()
-        ], 1
+        self.search_calls: list[
+            dict[str, object]
+        ] = []
+        self.detail_calls: list[int] = []
 
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
+    def search_jobs(
+        self,
+        *,
+        city: str | None = None,
+        company: str | None = None,
+        skill: str | None = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> tuple[list[JobRead], int]:
+        self.search_calls.append(
+            {
+                "city": city,
+                "company": company,
+                "skill": skill,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+        if self.search_error is not None:
+            raise self.search_error
+
+        return (
+            self.search_items,
+            self.search_total,
+        )
+
+    def get_job_by_id(
+        self,
+        job_id: int,
+    ) -> JobRead | None:
+        self.detail_calls.append(
+            job_id
+        )
+
+        if self.detail_error is not None:
+            raise self.detail_error
+
+        return self.detail_result
+
+
+def test_search_jobs_tool_uses_normalized_filters_and_defaults() -> None:
+    job_query = FakeJobQuery(
+        search_items=[
+            make_job_read()
+        ],
+        search_total=1,
     )
 
     tool = SearchJobsTool(
-        session  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -84,12 +136,16 @@ def test_search_jobs_tool_uses_normalized_filters_and_defaults(
     )
 
     assert result.success is True
-    assert captured["session"] is session
-    assert captured["city"] == "深圳"
-    assert captured["company"] is None
-    assert captured["skill"] == "Python Backend"
-    assert captured["page"] == 1
-    assert captured["page_size"] == 10
+
+    assert job_query.search_calls == [
+        {
+            "city": "深圳",
+            "company": None,
+            "skill": "Python Backend",
+            "page": 1,
+            "page_size": 10,
+        }
+    ]
 
     assert result.data is not None
     assert result.data["total"] == 1
@@ -108,23 +164,11 @@ def test_search_jobs_tool_uses_normalized_filters_and_defaults(
     )
 
 
-def test_search_jobs_tool_returns_success_for_empty_result(
-    monkeypatch: Any,
-) -> None:
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        return [], 0
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
-    )
+def test_search_jobs_tool_returns_success_for_empty_result() -> None:
+    job_query = FakeJobQuery()
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -144,23 +188,13 @@ def test_search_jobs_tool_returns_success_for_empty_result(
     }
 
 
-def test_search_jobs_tool_preserves_empty_high_page(
-    monkeypatch: Any,
-) -> None:
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        return [], 25
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
+def test_search_jobs_tool_preserves_empty_high_page() -> None:
+    job_query = FakeJobQuery(
+        search_total=25,
     )
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -184,28 +218,11 @@ def test_search_jobs_tool_preserves_empty_high_page(
     }
 
 
-def test_search_jobs_tool_rejects_blank_filter_before_repository(
-    monkeypatch: Any,
-) -> None:
-    called = False
-
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        nonlocal called
-        called = True
-
-        return [], 0
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
-    )
+def test_search_jobs_tool_rejects_blank_filter_before_query() -> None:
+    job_query = FakeJobQuery()
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -223,31 +240,14 @@ def test_search_jobs_tool_rejects_blank_filter_before_repository(
     assert result.error.startswith(
         "Invalid tool arguments:"
     )
-    assert called is False
+    assert job_query.search_calls == []
 
 
-def test_search_jobs_tool_rejects_invalid_page_before_repository(
-    monkeypatch: Any,
-) -> None:
-    called = False
-
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        nonlocal called
-        called = True
-
-        return [], 0
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
-    )
+def test_search_jobs_tool_rejects_invalid_page_before_query() -> None:
+    job_query = FakeJobQuery()
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -261,31 +261,14 @@ def test_search_jobs_tool_rejects_invalid_page_before_repository(
     )
 
     assert result.success is False
-    assert called is False
+    assert job_query.search_calls == []
 
 
-def test_search_jobs_tool_rejects_invalid_page_size_before_repository(
-    monkeypatch: Any,
-) -> None:
-    called = False
-
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        nonlocal called
-        called = True
-
-        return [], 0
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
-    )
+def test_search_jobs_tool_rejects_invalid_page_size_before_query() -> None:
+    job_query = FakeJobQuery()
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -299,28 +282,18 @@ def test_search_jobs_tool_rejects_invalid_page_size_before_repository(
     )
 
     assert result.success is False
-    assert called is False
+    assert job_query.search_calls == []
 
 
-def test_search_jobs_tool_converts_repository_exception(
-    monkeypatch: Any,
-) -> None:
-    def fake_query_jobs(
-        session: object,
-        **kwargs: Any,
-    ) -> tuple[list[SimpleNamespace], int]:
-        raise RuntimeError(
+def test_search_jobs_tool_converts_query_exception() -> None:
+    job_query = FakeJobQuery(
+        search_error=RuntimeError(
             "database connection failed"
-        )
-
-    monkeypatch.setattr(
-        job_tools,
-        "query_jobs",
-        fake_query_jobs,
+        ),
     )
 
     tool = SearchJobsTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -331,35 +304,21 @@ def test_search_jobs_tool_converts_repository_exception(
     )
 
     assert result.success is False
-    assert result.error == "Tool execution failed."
+    assert result.error == (
+        "Tool execution failed."
+    )
     assert "database" not in result.error
 
 
-def test_get_job_detail_tool_returns_job(
-    monkeypatch: Any,
-) -> None:
-    captured: dict[str, Any] = {}
-    session = object()
-
-    def fake_get_job_by_id(
-        received_session: object,
-        job_id: int,
-    ) -> SimpleNamespace:
-        captured["session"] = received_session
-        captured["job_id"] = job_id
-
-        return make_job_record(
+def test_get_job_detail_tool_returns_job() -> None:
+    job_query = FakeJobQuery(
+        detail_result=make_job_read(
             job_id=3
-        )
-
-    monkeypatch.setattr(
-        job_tools,
-        "get_job_by_id",
-        fake_get_job_by_id,
+        ),
     )
 
     tool = GetJobDetailTool(
-        session  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -373,10 +332,9 @@ def test_get_job_detail_tool_returns_job(
     )
 
     assert result.success is True
-    assert captured == {
-        "session": session,
-        "job_id": 3,
-    }
+    assert job_query.detail_calls == [
+        3
+    ]
 
     assert result.data is not None
     assert result.data["id"] == 3
@@ -390,23 +348,11 @@ def test_get_job_detail_tool_returns_job(
     )
 
 
-def test_get_job_detail_tool_returns_success_when_job_missing(
-    monkeypatch: Any,
-) -> None:
-    def fake_get_job_by_id(
-        session: object,
-        job_id: int,
-    ) -> None:
-        return None
-
-    monkeypatch.setattr(
-        job_tools,
-        "get_job_by_id",
-        fake_get_job_by_id,
-    )
+def test_get_job_detail_tool_returns_success_when_job_missing() -> None:
+    job_query = FakeJobQuery()
 
     tool = GetJobDetailTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -423,29 +369,16 @@ def test_get_job_detail_tool_returns_success_when_job_missing(
     assert result.data is None
     assert result.error is None
 
+    assert job_query.detail_calls == [
+        999999
+    ]
 
-def test_get_job_detail_tool_rejects_invalid_job_id_before_repository(
-    monkeypatch: Any,
-) -> None:
-    called = False
 
-    def fake_get_job_by_id(
-        session: object,
-        job_id: int,
-    ) -> None:
-        nonlocal called
-        called = True
-
-        return None
-
-    monkeypatch.setattr(
-        job_tools,
-        "get_job_by_id",
-        fake_get_job_by_id,
-    )
+def test_get_job_detail_tool_rejects_invalid_job_id_before_query() -> None:
+    job_query = FakeJobQuery()
 
     tool = GetJobDetailTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -459,28 +392,18 @@ def test_get_job_detail_tool_rejects_invalid_job_id_before_repository(
     )
 
     assert result.success is False
-    assert called is False
+    assert job_query.detail_calls == []
 
 
-def test_get_job_detail_tool_converts_repository_exception(
-    monkeypatch: Any,
-) -> None:
-    def fake_get_job_by_id(
-        session: object,
-        job_id: int,
-    ) -> None:
-        raise RuntimeError(
+def test_get_job_detail_tool_converts_query_exception() -> None:
+    job_query = FakeJobQuery(
+        detail_error=RuntimeError(
             "database connection failed"
-        )
-
-    monkeypatch.setattr(
-        job_tools,
-        "get_job_by_id",
-        fake_get_job_by_id,
+        ),
     )
 
     tool = GetJobDetailTool(
-        object()  # type: ignore[arg-type]
+        job_query
     )
 
     result = tool.execute(
@@ -494,5 +417,7 @@ def test_get_job_detail_tool_converts_repository_exception(
     )
 
     assert result.success is False
-    assert result.error == "Tool execution failed."
+    assert result.error == (
+        "Tool execution failed."
+    )
     assert "database" not in result.error
