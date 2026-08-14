@@ -559,6 +559,72 @@ def test_orchestrator_trims_user_message_before_model_request() -> None:
     )
 
 
+def test_orchestrator_keeps_runs_isolated() -> None:
+    tool = RecordingTool()
+
+    model = FakeModelClient(
+        responses=[
+            ToolCallResponse(
+                tool_call=ToolCall(
+                    call_id="call_001",
+                    tool_name="record_value",
+                    arguments={
+                        "value": 1,
+                    },
+                )
+            ),
+            FinalAnswerResponse(
+                answer="第一次运行完成。"
+            ),
+            FinalAnswerResponse(
+                answer="第二次运行完成。"
+            ),
+        ]
+    )
+
+    orchestrator = AgentOrchestrator(
+        model_client=model,
+        tool_registry=build_registry(
+            tool
+        ),
+    )
+
+    first_result = orchestrator.run(
+        "第一次运行"
+    )
+    second_result = orchestrator.run(
+        "第二次运行"
+    )
+
+    assert first_result.answer == (
+        "第一次运行完成。"
+    )
+    assert first_result.steps == 2
+    assert len(
+        first_result.tool_executions
+    ) == 1
+
+    assert second_result.answer == (
+        "第二次运行完成。"
+    )
+    assert second_result.steps == 1
+    assert second_result.tool_executions == []
+
+    assert len(model.requests) == 3
+    assert (
+        model.requests[2].user_message
+        == "第二次运行"
+    )
+    assert (
+        model.requests[2].tool_executions
+        == []
+    )
+
+    assert tool.values == [
+        1,
+    ]
+
+
 def test_orchestrator_propagates_model_client_error() -> None:
     orchestrator = AgentOrchestrator(
         model_client=ExplodingModelClient(),

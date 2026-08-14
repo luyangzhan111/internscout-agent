@@ -285,6 +285,31 @@ def test_search_jobs_tool_rejects_invalid_page_size_before_query() -> None:
     assert job_query.search_calls == []
 
 
+def test_search_jobs_tool_rejects_unknown_argument_before_query() -> None:
+    job_query = FakeJobQuery()
+
+    tool = SearchJobsTool(
+        job_query
+    )
+
+    result = tool.execute(
+        ToolCall(
+            call_id="call_001",
+            tool_name="search_jobs",
+            arguments={
+                "ctiy": "深圳",
+            },
+        )
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.startswith(
+        "Invalid tool arguments:"
+    )
+    assert job_query.search_calls == []
+
+
 def test_search_jobs_tool_converts_query_exception() -> None:
     job_query = FakeJobQuery(
         search_error=RuntimeError(
@@ -392,6 +417,32 @@ def test_get_job_detail_tool_rejects_invalid_job_id_before_query() -> None:
     )
 
     assert result.success is False
+    assert job_query.detail_calls == []
+
+
+def test_get_job_detail_tool_rejects_unknown_argument_before_query() -> None:
+    job_query = FakeJobQuery()
+
+    tool = GetJobDetailTool(
+        job_query
+    )
+
+    result = tool.execute(
+        ToolCall(
+            call_id="call_001",
+            tool_name="get_job_detail",
+            arguments={
+                "job_id": 1,
+                "unexpected": True,
+            },
+        )
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.startswith(
+        "Invalid tool arguments:"
+    )
     assert job_query.detail_calls == []
 
 

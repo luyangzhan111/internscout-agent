@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
 )
@@ -13,6 +14,10 @@ from app.schemas.job_response import JobListResponse
 
 class SearchJobsArguments(BaseModel):
     """Validated arguments accepted by the search_jobs tool."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     city: str | None = Field(
         default=None,
@@ -73,6 +78,10 @@ class SearchJobsArguments(BaseModel):
 
 class GetJobDetailArguments(BaseModel):
     """Validated arguments accepted by get_job_detail."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     job_id: int = Field(
         ge=1,

@@ -274,6 +274,16 @@ def test_final_answer_response_has_final_answer_discriminator() -> None:
     assert response.answer == "找到 3 个符合条件的岗位。"
 
 
+def test_final_answer_response_rejects_blank_answer() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="Final answer cannot be blank",
+    ):
+        FinalAnswerResponse(
+            answer="   "
+        )
+
+
 def test_agent_result_stores_answer_steps_and_execution_trace() -> None:
     tool_call = ToolCall(
         call_id="call_001",

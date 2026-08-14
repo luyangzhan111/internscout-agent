@@ -3,6 +3,7 @@ from typing import Any, Literal, TypeAlias
 from pydantic import (
     BaseModel,
     Field,
+    field_validator,
     model_validator,
 )
 
@@ -97,6 +98,23 @@ class FinalAnswerResponse(BaseModel):
 
     type: Literal["final_answer"] = "final_answer"
     answer: str = Field(min_length=1)
+
+    @field_validator(
+        "answer",
+    )
+    @classmethod
+    def reject_blank_answer(
+        cls,
+        value: str,
+    ) -> str:
+        """Reject final answers containing only whitespace."""
+
+        if not value.strip():
+            raise ValueError(
+                "Final answer cannot be blank."
+            )
+
+        return value
 
 
 ModelResponse: TypeAlias = (
