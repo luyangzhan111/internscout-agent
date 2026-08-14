@@ -1067,3 +1067,92 @@ GET /api/health
 - 后续真实接入招聘数据源时复用现有Crawler接口和处理管道
 - 根据实际需求进一步统一数据库配置和测试fixture
 - 在合适阶段处理数据库迁移和TestClient依赖升级
+
+
+## 阶段7：Tool-Calling Agent Layer 与 Agent Runtime
+
+### 本阶段完成
+
+- 在Stage 6现有FastAPI、SQLite和岗位查询能力之上建立独立Agent Layer
+- 创建Agent内部统一Contract
+- 实现ToolDefinition
+- 实现ToolCall
+- 实现ToolResult
+- 实现ToolExecution
+- 实现ModelRequest
+- 实现ToolCallResponse
+- 实现FinalAnswerResponse
+- 实现AgentResult
+- 创建AgentState保存单次Agent Run运行状态
+- 创建AgentError异常基类
+- 创建AgentMaxStepsExceeded最大步骤异常
+- 实现BaseTool统一Tool执行协议
+- Tool参数使用Pydantic模型验证
+- Tool参数错误转换为失败ToolResult
+- Tool内部异常转换为统一失败ToolResult
+- Tool内部异常不会向Agent泄漏底层错误信息
+- 实现ToolRegistry
+- 支持Tool注册、查找和ToolDefinition列表生成
+- 重复Tool名称注册会被拒绝
+- 实现SearchJobsTool
+- 实现GetJobDetailTool
+- 实现ModelClient抽象接口
+- 实现FakeModelClient用于确定性Agent单元测试
+- 实现AgentOrchestrator
+- 支持Model直接返回FinalAnswer
+- 支持Model发起ToolCall
+- 支持Tool执行结果作为Observation进入下一轮模型决策
+- 支持多个Tool按顺序连续调用
+- Tool参数失败不会直接终止Agent
+- Tool内部失败不会直接终止Agent
+- Unknown Tool不会直接导致Agent崩溃
+- Unknown Tool会转换为失败Observation
+- FinalAnswer会正常终止Agent Run
+- 使用max_steps限制单次Agent Run中的Model调用次数
+- max_steps在下一次Model.generate之前检查
+- 增加Agent Run之间的状态隔离
+- 每次run创建独立AgentState，不使用self.state保存单次运行状态
+- Repo Reality Check发现Job Tool仍然直接依赖Repository和SQLAlchemy Session
+- 新增JobQueryPort作为Agent侧岗位查询抽象
+- 新增RepositoryJobQueryAdapter连接JobQueryPort和现有Repository
+- SearchJobsTool和GetJobDetailTool改为只依赖JobQueryPort
+- Agent Job Tool不再直接依赖SQLAlchemy Session
+- Agent Job Tool不再直接调用Repository
+- Adapter负责将Repository返回的数据转换为JobRead
+- 完成Codex Stage 7最终只读代码审查
+- Codex最终结论：必须修改为无
+- Codex提出3项非阻塞Hardening建议
+- Tool参数模型增加extra="forbid"，禁止未知参数被静默忽略
+- FinalAnswerResponse增加纯空白答案保护
+- 增加同一AgentOrchestrator连续两次run的状态隔离测试
+- Codex提出的3项建议全部完成
+- Stage 7最终Agent Layer测试70 passed
+- 全项目最终184 passed，1 warning
+
+### Stage 7 Agent架构
+
+阶段7最终形成：
+
+```text
+User Goal
+↓
+AgentOrchestrator
+↓
+ModelClient
+↓
+Model Decision
+├─ ToolCallResponse
+│      ↓
+│   ToolRegistry
+│      ↓
+│     Tool
+│      ↓
+│  ToolResult
+│      ↓
+│ Observation
+│      ↓
+│ Next Model Decision
+│
+└─ FinalAnswerResponse
+       ↓
+    AgentResult
