@@ -31,18 +31,68 @@ class OpenAIModelClient(ModelClient):
         self,
         request: ModelRequest,
     ) -> ModelResponse:
-        if request.tool_executions:
-            raise ValueError(
-                "OpenAIModelClient does not yet support tool execution history."
-            )
-
         response = self._client.responses.create(
             model=self.model,
-            input=request.user_message,
+            input=self._map_input(request),
             tools=[self._map_tool(tool) for tool in request.tools],
             parallel_tool_calls=False,
         )
         return self._map_response(response)
+
+    @staticmethod
+    def _map_input(request: ModelRequest) -> str | list[dict[str, Any]]:
+        if not request.tool_executions:
+            return request.user_message
+
+        input_items: list[dict[str, Any]] = [
+            {
+                "role": "user",
+                "content": request.user_message,
+            }
+        ]
+
+        for execution in request.tool_executions:
+            input_items.append(
+                {
+                    "type": "function_call",
+                    "call_id": execution.call.call_id,
+                    "name": execution.call.tool_name,
+                    "arguments": OpenAIModelClient._serialize_json(
+                        execution.call.arguments,
+                        "Tool call arguments",
+                    ),
+                }
+            )
+
+            result = execution.result
+            observation: dict[str, Any] = {
+                "success": result.success,
+                "tool_name": result.tool_name,
+            }
+            if result.success:
+                observation["data"] = result.data
+            else:
+                observation["error"] = result.error
+
+            input_items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": result.call_id,
+                    "output": OpenAIModelClient._serialize_json(
+                        observation,
+                        "Tool result observation",
+                    ),
+                }
+            )
+
+        return input_items
+
+    @staticmethod
+    def _serialize_json(value: Any, label: str) -> str:
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(f"{label} must be JSON serializable.") from exc
 
     @staticmethod
     def _map_tool(tool: Any) -> dict[str, Any]:

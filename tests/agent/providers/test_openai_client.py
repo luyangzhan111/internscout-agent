@@ -1,9 +1,12 @@
+import json
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 
 from app.agent.contracts import (
+    AgentResult,
     FinalAnswerResponse,
     ModelRequest,
     ToolCallResponse,
@@ -12,25 +15,45 @@ from app.agent.contracts import (
     ToolResult,
     ToolCall,
 )
+from app.agent.orchestrator import AgentOrchestrator
 from app.agent.providers.openai_client import OpenAIModelClient
+from app.agent.tools.base import BaseTool
+from app.agent.tools.registry import ToolRegistry
 
 
 class FakeResponses:
-    def __init__(self, response: Any = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        response: Any = None,
+        error: Exception | None = None,
+        responses: list[Any] | None = None,
+    ) -> None:
         self.response = response
         self.error = error
+        self.responses = responses
         self.calls: list[dict[str, Any]] = []
 
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
+        if self.responses is not None:
+            return self.responses.pop(0)
         return self.response
 
 
 class FakeClient:
-    def __init__(self, response: Any = None, error: Exception | None = None) -> None:
-        self.responses = FakeResponses(response=response, error=error)
+    def __init__(
+        self,
+        response: Any = None,
+        error: Exception | None = None,
+        responses: list[Any] | None = None,
+    ) -> None:
+        self.responses = FakeResponses(
+            response=response,
+            error=error,
+            responses=responses,
+        )
 
 
 def response(*, output_text: str = "", output: list[Any] | None = None) -> Any:
@@ -48,6 +71,31 @@ def function_call(
         call_id=call_id,
         name=name,
         arguments=arguments,
+    )
+
+
+def execution(
+    *,
+    call_id: str = "call_001",
+    tool_name: str = "search_jobs",
+    arguments: dict[str, Any] | None = None,
+    success: bool = True,
+    data: Any = None,
+    error: str | None = None,
+) -> ToolExecution:
+    return ToolExecution(
+        call=ToolCall(
+            call_id=call_id,
+            tool_name=tool_name,
+            arguments=arguments or {"city": "深圳"},
+        ),
+        result=ToolResult(
+            call_id=call_id,
+            tool_name=tool_name,
+            success=success,
+            data=data,
+            error=error,
+        ),
     )
 
 
@@ -121,22 +169,95 @@ def test_rejects_non_object_json_arguments(arguments: str) -> None:
         )
 
 
-def test_rejects_non_empty_tool_execution_history() -> None:
-    fake = FakeClient(response=response(output_text="不应请求"))
-    execution = ToolExecution(
-        call=ToolCall(call_id="call_001", tool_name="search_jobs"),
-        result=ToolResult(
-            call_id="call_001",
-            tool_name="search_jobs",
-            success=True,
-            data={"jobs": []},
-        ),
+def test_maps_successful_tool_execution_history() -> None:
+    fake = FakeClient(response=response(output_text="继续。"))
+    request = ModelRequest(
+        user_message="查询深圳岗位",
+        tool_executions=[
+            execution(data={"items": [{"title": "后端实习"}], "total": 1})
+        ],
     )
 
-    with pytest.raises(ValueError, match="tool execution history"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
-            ModelRequest(user_message="继续", tool_executions=[execution])
-        )
+    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+
+    input_items = fake.responses.calls[0]["input"]
+    assert input_items[0] == {"role": "user", "content": "查询深圳岗位"}
+    assert input_items[1] == {
+        "type": "function_call",
+        "call_id": "call_001",
+        "name": "search_jobs",
+        "arguments": '{"city": "深圳"}',
+    }
+    output_item = input_items[2]
+    assert output_item["type"] == "function_call_output"
+    assert output_item["call_id"] == "call_001"
+    assert isinstance(output_item["output"], str)
+    assert json.loads(output_item["output"]) == {
+        "success": True,
+        "tool_name": "search_jobs",
+        "data": {"items": [{"title": "后端实习"}], "total": 1},
+    }
+
+
+def test_maps_failed_tool_execution_history() -> None:
+    fake = FakeClient(response=response(output_text="请修正参数。"))
+    request = ModelRequest(
+        user_message="查询岗位",
+        tool_executions=[
+            execution(
+                success=False,
+                data=None,
+                error="Invalid tool arguments: city is required",
+            )
+        ],
+    )
+
+    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+
+    output = json.loads(fake.responses.calls[0]["input"][2]["output"])
+    assert output == {
+        "success": False,
+        "tool_name": "search_jobs",
+        "error": "Invalid tool arguments: city is required",
+    }
+
+
+def test_maps_multiple_tool_executions_in_order() -> None:
+    fake = FakeClient(response=response(output_text="完成。"))
+    request = ModelRequest(
+        user_message="查询多个岗位",
+        tool_executions=[
+            execution(call_id="call_001", data={"total": 1}),
+            execution(call_id="call_002", data={"total": 2}),
+        ],
+    )
+
+    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+
+    input_items = fake.responses.calls[0]["input"]
+    assert [item.get("call_id") for item in input_items[1:]] == [
+        "call_001",
+        "call_001",
+        "call_002",
+        "call_002",
+    ]
+    assert [item["type"] for item in input_items[1:]] == [
+        "function_call",
+        "function_call_output",
+        "function_call",
+        "function_call_output",
+    ]
+
+
+def test_rejects_non_json_serializable_tool_history() -> None:
+    fake = FakeClient(response=response(output_text="不应请求"))
+    request = ModelRequest(
+        user_message="查询",
+        tool_executions=[execution(data={"invalid": object()})],
+    )
+
+    with pytest.raises(ValueError, match="JSON serializable"):
+        OpenAIModelClient(model="gpt-test", client=fake).generate(request)
 
     assert fake.responses.calls == []
 
@@ -174,3 +295,70 @@ def test_rejects_empty_provider_output() -> None:
         OpenAIModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
+
+
+class SearchArguments(BaseModel):
+    city: str
+
+
+class RecordingSearchTool(BaseTool[SearchArguments]):
+    name = "search_jobs"
+    description = "Search jobs."
+    args_schema = SearchArguments
+
+    def _run(self, arguments: SearchArguments) -> dict[str, Any]:
+        return {"items": [{"city": arguments.city}], "total": 1}
+
+
+def test_completes_offline_agent_loop_with_success_observation() -> None:
+    fake = FakeClient(
+        responses=[
+            response(output=[function_call(arguments='{"city": "深圳"}')]),
+            response(output_text="找到 1 个岗位。"),
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(RecordingSearchTool())
+
+    result = AgentOrchestrator(
+        model_client=OpenAIModelClient(model="gpt-test", client=fake),
+        tool_registry=registry,
+    ).run("查询深圳岗位")
+
+    assert isinstance(result, AgentResult)
+    assert result.answer == "找到 1 个岗位。"
+    assert result.steps == 2
+    assert len(result.tool_executions) == 1
+    second_input = fake.responses.calls[1]["input"]
+    assert second_input[1]["type"] == "function_call"
+    assert second_input[2]["type"] == "function_call_output"
+    assert json.loads(second_input[2]["output"]) == {
+        "success": True,
+        "tool_name": "search_jobs",
+        "data": {"items": [{"city": "深圳"}], "total": 1},
+    }
+
+
+def test_completes_offline_agent_loop_with_failed_observation() -> None:
+    fake = FakeClient(
+        responses=[
+            response(output=[function_call(arguments='{"city": 123}')]),
+            response(output_text="参数无效，请重新查询。"),
+        ]
+    )
+    registry = ToolRegistry()
+    registry.register(RecordingSearchTool())
+
+    result = AgentOrchestrator(
+        model_client=OpenAIModelClient(model="gpt-test", client=fake),
+        tool_registry=registry,
+    ).run("查询岗位")
+
+    assert result.answer == "参数无效，请重新查询。"
+    assert result.steps == 2
+    assert result.tool_executions[0].result.success is False
+    second_output = json.loads(fake.responses.calls[1]["input"][2]["output"])
+    assert second_output["success"] is False
+    assert second_output["tool_name"] == "search_jobs"
+    assert second_output["error"].startswith("Invalid tool arguments:")
+    assert "city" in second_output["error"]
