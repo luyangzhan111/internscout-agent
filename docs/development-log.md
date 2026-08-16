@@ -1156,3 +1156,1515 @@ Model Decision
 └─ FinalAnswerResponse
        ↓
     AgentResult
+
+```
+
+### Stage 7 结论
+
+Stage 7 建立了 InternScout Agent 第一版独立、可测试的 Tool-Calling Agent Runtime。
+
+核心结果：
+
+```text
+User Goal
+→ AgentOrchestrator
+→ ModelClient
+→ ToolCall
+→ Tool
+→ Observation
+→ ModelClient
+→ FinalAnswer
+```
+
+并通过 `JobQueryPort + RepositoryJobQueryAdapter` 保持 Agent Tool 与 Repository / SQLAlchemy 解耦。
+
+Stage 7 最终状态：
+
+```text
+Agent Layer:
+70 passed
+
+Full Regression:
+184 passed
+1 warning
+```
+
+后续 Stage 将在不重新设计当前 Agent Runtime 的前提下接入真实 LLM Provider。
+
+---
+
+## 阶段8：Real LLM Provider Integration
+
+### 本阶段目标
+
+Stage 8 的核心目标不是简单完成一次大模型 API 调用，而是验证：
+
+```text
+Stage 7 已建立的 provider-neutral Agent Runtime
+是否可以在不重新设计核心架构的情况下
+接入真实 LLM Provider。
+```
+
+需要保持：
+
+```text
+AgentOrchestrator
+↓
+ModelClient
+↓
+Provider Adapter
+```
+
+其中 `AgentOrchestrator` 不直接知道：
+
+```text
+DeepSeek
+Responses API
+OpenAI Python SDK
+API Key
+Provider-specific Response
+```
+
+---
+
+### 本阶段完成
+
+- 创建 `docs/codex-workflow.md`
+- 创建 `docs/tasks/stage-08-task.md`
+- 从 Stage 8 开始正式采用 Architecture-First + Codex-Driven Implementation + Human Verification 工作流
+- 明确 Codex 常规实现使用 Luna
+- 高推理模型仅用于复杂架构、疑难 Debug 和 Stage Final Review
+- 建立真实 LLM Provider Adapter
+- 保持 Stage 7 `ModelClient` Contract 不变
+- 保持 `AgentOrchestrator` 不变
+- 保持 `AgentState` 不变
+- 保持现有 Tool System 不变
+- 实现 Provider Request Mapping
+- 实现 Provider ToolDefinition Mapping
+- 实现 Provider FinalAnswer Mapping
+- 实现 Provider Function Call Mapping
+- 实现 ToolExecution History Mapping
+- 实现成功 Tool Observation Mapping
+- 实现失败 Tool Observation Mapping
+- 支持多个 Sequential ToolExecution 的历史重建
+- 保留原始 `call_id`
+- 增加 JSON Serialization Fail-Fast
+- 保留 Unicode Observation
+- 明确拒绝一次 Provider Response 中的多个 Function Calls
+- 完成 Provider Offline Tests
+- 完成 Provider + AgentOrchestrator Offline Integration Test
+- 完成 Tool Failure → Observation → Next Model Decision 测试
+- Stage 8 中途将真实 Provider 从 OpenAI 调整为 DeepSeek
+- 将 `OpenAIModelClient` 替换为 `DeepSeekModelClient`
+- 将 `openai_client.py` 迁移为 `deepseek_client.py`
+- 将 Provider tests 同步迁移到 DeepSeek identity
+- DeepSeek 继续复用 OpenAI Python SDK 作为兼容客户端
+- 配置 DeepSeek API base URL
+- 使用 `DEEPSEEK_API_KEY`
+- 缺少 API Key 且没有注入 Client 时 fail-fast
+- 注入 Fake Client 时不需要真实 API Key
+- 每次 DeepSeek request 显式设置 `reasoning={"effort": "none"}`
+- 不依赖 `parallel_tool_calls=False` 作为 Sequential guarantee
+- Adapter 自己负责检测并拒绝多个 Function Calls
+- 完成真实 DeepSeek FinalAnswer Smoke Test
+- 完成真实 DeepSeek ToolCall → Tool → Observation → FinalAnswer Smoke Test
+- 完成 Codex Stage 8 Final Read-Only Review
+- Final Review `MUST FIX = 0`
+- 修复 `docs/codex-workflow.md` Markdown fence 格式问题
+- Stage 8 最终本地 Full Regression：204 passed，0 warnings
+
+---
+
+### Stage 8 最终 Provider 架构
+
+```text
+User Goal
+↓
+AgentOrchestrator
+↓
+ModelClient
+↓
+DeepSeekModelClient
+↓
+DeepSeek Responses API
+↓
+Provider Response
+├─ ToolCallResponse
+│      ↓
+│   ToolRegistry
+│      ↓
+│     Tool
+│      ↓
+│  ToolResult
+│      ↓
+│ Observation
+│      ↓
+│ DeepSeekModelClient
+│      ↓
+│ DeepSeek Responses API
+│      ↓
+│ FinalAnswerResponse
+│
+└─ FinalAnswerResponse
+       ↓
+    AgentResult
+```
+
+---
+
+### Provider Adapter Boundary
+
+Stage 8 最重要的架构边界：
+
+```text
+Agent Runtime
+        │
+        ▼
+    ModelClient
+        │
+        ▼
+DeepSeekModelClient
+        │
+        ▼
+DeepSeek API
+```
+
+`DeepSeekModelClient` 负责：
+
+```text
+Internal Contract
+↕
+Provider Contract
+```
+
+包括：
+
+```text
+ModelRequest
+→ DeepSeek Request
+
+ToolDefinition
+→ Function Tool
+
+DeepSeek Function Call
+→ ToolCallResponse
+
+DeepSeek Final Text
+→ FinalAnswerResponse
+```
+
+它不负责：
+
+```text
+Agent Loop
+Tool Execution
+Repository
+Database
+FastAPI
+Retry
+Memory
+RAG
+```
+
+---
+
+### DeepSeek Provider 配置
+
+最终 Provider：
+
+```text
+DeepSeek
+```
+
+API：
+
+```text
+DeepSeek Responses API
+```
+
+Base URL：
+
+```text
+https://api.deepseek.com
+```
+
+底层 SDK：
+
+```text
+OpenAI Python SDK
+```
+
+这里：
+
+```text
+Provider = DeepSeek
+SDK = OpenAI-compatible client
+```
+
+两者不是同一个概念。
+
+---
+
+### Model 名称配置
+
+模型名称不写死在：
+
+```text
+AgentOrchestrator
+ModelClient Contract
+Agent Contract
+```
+
+而是通过：
+
+```python
+DeepSeekModelClient(
+    model="..."
+)
+```
+
+传入。
+
+真实 Smoke Test 使用：
+
+```text
+deepseek-v4-flash
+```
+
+---
+
+### API Key 处理
+
+真实 API Key 使用：
+
+```text
+DEEPSEEK_API_KEY
+```
+
+环境变量提供。
+
+原则：
+
+```text
+不得硬编码
+不得提交 Git
+不得写入测试
+不得写入 PROJECT_STATE
+不得写入 Stage Review
+不得输出真实 Secret
+```
+
+真实 Client：
+
+```text
+DEEPSEEK_API_KEY
+↓
+OpenAI Python SDK
+↓
+base_url=https://api.deepseek.com
+↓
+DeepSeek API
+```
+
+如果没有注入 Fake Client，同时：
+
+```text
+DEEPSEEK_API_KEY
+```
+
+不存在：
+
+```text
+Fail Fast
+```
+
+---
+
+### Dependency Injection
+
+`DeepSeekModelClient` 支持：
+
+```python
+DeepSeekModelClient(
+    model="...",
+    client=fake_client,
+)
+```
+
+测试中：
+
+```text
+Fake Client
+→ 不读取真实 API Key
+→ 不访问真实网络
+```
+
+生产 / Smoke Test：
+
+```text
+没有 injected client
+→ 读取 DEEPSEEK_API_KEY
+→ 创建真实 SDK Client
+```
+
+这使自动化测试保持：
+
+```text
+Offline
+Deterministic
+Repeatable
+```
+
+---
+
+### Stateless Provider Mapping
+
+Stage 8 保持：
+
+```text
+Stateless Provider Adapter
+```
+
+没有引入：
+
+```text
+self.history
+self.last_response
+previous_response_id
+Provider Conversation State
+Persistent Conversation
+```
+
+每次：
+
+```python
+generate(ModelRequest)
+```
+
+都根据当前 Request 重建 Provider Input。
+
+---
+
+### 第一次 Model Request
+
+如果：
+
+```text
+tool_executions == []
+```
+
+直接发送：
+
+```text
+user_message
+```
+
+保持第一次请求最小化。
+
+---
+
+### ToolExecution History Mapping
+
+如果 Tool 已经执行：
+
+```text
+ModelRequest.tool_executions
+```
+
+Adapter 按顺序重建：
+
+```text
+User Message
+↓
+function_call
+↓
+function_call_output
+```
+
+如果发生多个 Sequential Tool Calls：
+
+```text
+User
+↓
+function_call 1
+↓
+function_call_output 1
+↓
+function_call 2
+↓
+function_call_output 2
+```
+
+不会：
+
+```text
+只保留最后一个
+覆盖历史 Observation
+重新生成 call_id
+```
+
+---
+
+### Function Call Mapping
+
+Provider Function Call 映射为：
+
+```text
+ToolCallResponse
+↓
+ToolCall
+```
+
+保留：
+
+```text
+call_id
+tool_name
+arguments
+```
+
+arguments 必须：
+
+```text
+JSON parse success
++
+最终是 dict / object
+```
+
+以下情况明确失败：
+
+```text
+invalid JSON
+array
+string
+number
+```
+
+---
+
+### Success Observation
+
+Tool 成功：
+
+```text
+ToolResult(
+    success=True
+)
+```
+
+Provider Observation 包含：
+
+```json
+{
+    "success": true,
+    "tool_name": "...",
+    "data": ...
+}
+```
+
+必须保留实际：
+
+```text
+data
+```
+
+不能只告诉模型：
+
+```text
+Tool succeeded
+```
+
+---
+
+### Failed Observation
+
+Tool 失败：
+
+```text
+ToolResult(
+    success=False
+)
+```
+
+Provider Observation 包含：
+
+```json
+{
+    "success": false,
+    "tool_name": "...",
+    "error": "..."
+}
+```
+
+继续保持 Stage 7 原则：
+
+```text
+Tool Failure != Agent Failure
+```
+
+模型可以根据失败 Observation：
+
+```text
+修改参数
+↓
+再次决策
+```
+
+---
+
+### call_id 一致性
+
+完整关联：
+
+```text
+Provider Function Call
+↓
+ToolCall.call_id
+↓
+ToolResult.call_id
+↓
+function_call_output.call_id
+```
+
+Stage 8 不重新生成 Provider `call_id`。
+
+---
+
+### JSON Serialization
+
+Observation 使用 JSON string 传给 Provider。
+
+使用：
+
+```text
+ensure_ascii=False
+```
+
+保留中文内容。
+
+如果数据不能 JSON Serialize：
+
+```text
+明确失败
+```
+
+不会使用：
+
+```text
+str(object)
+repr(object)
+```
+
+强行转换。
+
+---
+
+### Sequential Tool Calling Boundary
+
+Stage 8 继续保持：
+
+```text
+Sequential Tool Calling Only
+```
+
+支持：
+
+```text
+Model
+→ Tool A
+→ Model
+→ Tool B
+→ Model
+```
+
+但不支持：
+
+```text
+一次 Model Response
+→ Tool A + Tool B
+```
+
+如果 Provider 单次返回多个 Function Calls：
+
+```text
+明确失败
+```
+
+不会：
+
+```text
+只取第一个
+忽略其他调用
+```
+
+---
+
+### DeepSeek Parallel Tool Call 差异
+
+Provider 切换到 DeepSeek 后确认：
+
+```text
+不能依赖 parallel_tool_calls=False
+保证 Provider 一定只返回一个 Tool Call。
+```
+
+所以删除了对 Provider-side sequential guarantee 的依赖。
+
+真正的保护位于：
+
+```text
+DeepSeekModelClient Response Mapping
+```
+
+逻辑：
+
+```text
+function_call count > 1
+↓
+明确失败
+```
+
+---
+
+### DeepSeek Thinking Mode Boundary
+
+Stage 8 第一版只验证：
+
+```text
+non-reasoning Provider Integration
+```
+
+每次 DeepSeek Request 显式发送：
+
+```python
+reasoning={
+    "effort": "none"
+}
+```
+
+Stage 8 不实现：
+
+```text
+reasoning item persistence
+reasoning continuity
+provider-specific reasoning state
+```
+
+未来如果支持 reasoning model：
+
+```text
+需要新的 Architecture Decision
+```
+
+---
+
+### Provider Response Protection
+
+Stage 8 Provider Adapter 明确处理：
+
+```text
+Final text only
+→ FinalAnswerResponse
+
+Single function call
+→ ToolCallResponse
+```
+
+并拒绝：
+
+```text
+Invalid JSON Arguments
+Non-object Arguments
+Multiple Function Calls
+Function Call + Final Text
+Empty Provider Response
+Unsupported Response
+```
+
+Provider SDK Exception：
+
+```text
+继续传播
+```
+
+不会生成虚假的成功回答。
+
+---
+
+### Stage 8 Offline Tests
+
+Provider targeted tests 最终：
+
+```text
+20 passed
+```
+
+Agent subsystem：
+
+```text
+90 passed
+```
+
+主要覆盖：
+
+- blank model
+- DeepSeek SDK config
+- DEEPSEEK_API_KEY
+- missing API key
+- injected Fake Client
+- reasoning effort none
+- 不依赖 parallel_tool_calls
+- ToolDefinition mapping
+- FinalAnswer mapping
+- Single ToolCall mapping
+- invalid JSON arguments
+- non-object JSON arguments
+- successful ToolExecution history
+- failed ToolExecution history
+- multiple sequential ToolExecution history
+- JSON serialization failure
+- Provider exception
+- multiple Function Calls
+- mixed Function Call + Final Text
+- empty Provider output
+- successful offline Agent loop
+- failed Tool observation loop
+
+---
+
+### Offline Agent Loop
+
+成功 Observation 流程：
+
+```text
+Fake Provider
+↓
+ToolCallResponse
+↓
+AgentOrchestrator
+↓
+Tool
+↓
+ToolResult(success=True)
+↓
+function_call_output
+↓
+Fake Provider
+↓
+FinalAnswerResponse
+↓
+AgentResult
+```
+
+失败 Observation 流程：
+
+```text
+Fake Provider
+↓
+Invalid Tool Arguments
+↓
+BaseTool
+↓
+ToolResult(success=False)
+↓
+function_call_output
+↓
+Fake Provider
+↓
+FinalAnswer
+```
+
+两种流程均通过测试。
+
+---
+
+### Real DeepSeek Smoke Test A
+
+第一次真实 Provider 验证：
+
+```text
+ModelRequest
+↓
+DeepSeekModelClient
+↓
+Real DeepSeek Responses API
+↓
+FinalAnswerResponse
+```
+
+测试要求：
+
+```text
+只回复 smoke-ok
+```
+
+实际结果：
+
+```text
+response_type:
+FinalAnswerResponse
+
+answer:
+smoke-ok
+```
+
+结果：
+
+```text
+PASS
+```
+
+---
+
+### Real DeepSeek Smoke Test B
+
+Stage 8 最关键的真实验证：
+
+```text
+User
+↓
+Real DeepSeek
+↓
+ToolCall
+↓
+AgentOrchestrator
+↓
+get_smoke_code
+↓
+ToolResult
+↓
+Observation
+↓
+Real DeepSeek
+↓
+FinalAnswer
+↓
+AgentResult
+```
+
+真实结果：
+
+```text
+result_type:
+AgentResult
+
+steps:
+2
+
+tool_execution_count:
+1
+
+tool_name:
+get_smoke_code
+
+arguments:
+{"request": "stage8d2"}
+
+success:
+True
+
+data:
+{
+    "code": "DEEPSEEK_TOOL_SMOKE_OK",
+    "request": "stage8d2"
+}
+
+error:
+None
+```
+
+最终 Answer 包含：
+
+```text
+DEEPSEEK_TOOL_SMOKE_OK
+```
+
+结果：
+
+```text
+PASS
+```
+
+这证明真实：
+
+```text
+LLM
+→ ToolCall
+→ Tool
+→ Observation
+→ LLM
+→ FinalAnswer
+```
+
+链路完整工作。
+
+---
+
+### Stage 8 测试基线变化
+
+Stage 7 merge 后：
+
+```text
+184 passed
+1 warning
+```
+
+Stage 8 Provider Core：
+
+```text
+197 passed
+```
+
+Observation Mapping：
+
+```text
+202 passed
+0 warnings
+```
+
+DeepSeek Provider Alignment 后：
+
+```text
+204 passed
+0 warnings
+```
+
+Stage 8 当前最终 Full Regression：
+
+```text
+204 passed
+0 warnings
+```
+
+---
+
+### Warning 变化
+
+Stage 7 唯一 warning：
+
+```text
+StarletteDeprecationWarning
+```
+
+与：
+
+```text
+FastAPI TestClient
+Starlette
+httpx
+```
+
+兼容层有关。
+
+Stage 8 安装 OpenAI Python SDK 时引入：
+
+```text
+httpx2
+```
+
+之后原 warning 消失。
+
+Stage 8 最终：
+
+```text
+0 warnings
+```
+
+没有通过修改业务代码隐藏 warning。
+
+---
+
+### Provider 从 OpenAI 切换为 DeepSeek
+
+Stage 8 最初 Provider：
+
+```text
+OpenAI
+```
+
+完成了：
+
+```text
+OpenAI Model Client Core
+OpenAI Tool Observation Mapping
+```
+
+随后项目需求调整：
+
+```text
+OpenAI
+↓
+DeepSeek
+```
+
+由于 Provider Adapter 已经与 Agent Runtime 解耦：
+
+```text
+AgentOrchestrator
+ModelClient Contract
+AgentState
+Tool System
+Database
+FastAPI
+```
+
+全部不需要重构。
+
+主要变化集中：
+
+```text
+Provider Adapter
+Provider Tests
+Stage Task Documentation
+```
+
+这实际证明：
+
+```text
+Provider-Neutral Architecture
+```
+
+产生了真实工程价值。
+
+---
+
+### Stage 8 Git Checkpoints
+
+Stage 8 关键提交：
+
+```text
+6d5550b docs: add codex workflow and stage 8 plan
+
+54a21b3 feat: add OpenAI model client core
+
+f8ec4b1 feat: add OpenAI tool observation mapping
+
+937630f refactor: switch model provider to DeepSeek
+
+c0c37b9 docs: fix codex workflow markdown fence
+```
+
+历史 OpenAI Commit 被保留。
+
+原因：
+
+```text
+它们属于真实开发历史
+```
+
+不通过 reset / rebase 重写。
+
+---
+
+### Codex 开发流程变化
+
+Stage 8 开始正式明确：
+
+```text
+Architecture-First
++
+Codex-Driven Implementation
++
+Human Verification
+```
+
+职责：
+
+```text
+ChatGPT / Human
+→ Architecture
+→ Scope
+→ Acceptance Criteria
+→ Human Verification
+
+Codex Luna
+→ Routine Implementation
+→ Tests
+→ Repository Analysis
+
+Codex Sol High
+→ Complex Architecture
+→ Difficult Debug
+→ Final Read-Only Review
+```
+
+Codex 默认不得自动：
+
+```text
+git add
+git commit
+git push
+PR
+merge
+branch deletion
+```
+
+---
+
+### Codex Sandbox 测试权限问题
+
+Stage 8 多次出现：
+
+```text
+PermissionError
+WinError 5
+pytest tmp_path
+.pytest_cache
+```
+
+表现为：
+
+```text
+部分测试 passed
+大量 tests error
+```
+
+但错误全部来自：
+
+```text
+Codex Sandbox Temporary Directory Permissions
+```
+
+没有因此修改项目代码。
+
+最终始终使用开发者正常 VS Code PowerShell：
+
+```text
+python -m pytest -q
+```
+
+重新验证 Repository Reality。
+
+这进一步确认：
+
+```text
+Tool Environment Error
+!=
+Project Regression
+```
+
+---
+
+### Stage 8 Final Read-Only Review
+
+最终使用高推理 Codex Model 执行：
+
+```text
+READ ONLY
+```
+
+代码审查。
+
+最终：
+
+```text
+MUST FIX:
+无
+```
+
+Architecture Verdict：
+
+```text
+PASS
+```
+
+Final Verdict：
+
+```text
+READY FOR STAGE 8 CLOSEOUT
+```
+
+唯一 SHOULD FIX：
+
+```text
+docs/codex-workflow.md
+Markdown code fence 未关闭
+```
+
+随后已单独修复并提交。
+
+---
+
+### Stage 8 未实现的能力
+
+Stage 8 明确没有加入：
+
+```text
+Agent HTTP API
+Retry
+Memory
+RAG
+Vector Database
+Streaming
+Parallel Tool Execution
+Multi-Agent
+Persistent Conversation
+Agent Trace Persistence
+Token Accounting
+Cost Accounting
+Prompt Management Framework
+LangChain
+LlamaIndex
+AutoGen
+CrewAI
+```
+
+这些属于未来 Stage。
+
+---
+
+### 本阶段遇到的主要问题
+
+#### 1. Stage 8 最初 Provider 发生变化
+
+最开始计划：
+
+```text
+OpenAI
+```
+
+中途需求调整为：
+
+```text
+DeepSeek
+```
+
+处理方式：
+
+```text
+不重写 Agent Runtime
+只替换 Provider Adapter
+```
+
+这反而验证了 Stage 7 Provider abstraction 的价值。
+
+---
+
+#### 2. Responses Tool Observation History
+
+Stage 8B 初版只能处理：
+
+```text
+首次 Model Call
+```
+
+如果：
+
+```text
+Model
+→ ToolCall
+→ ToolResult
+```
+
+第二次 `generate()` 不能忽略 Tool history。
+
+最终 Stage 8C 实现：
+
+```text
+ToolExecution
+↓
+function_call
++
+function_call_output
+```
+
+完整重建。
+
+---
+
+#### 3. Parallel Tool Calling Boundary
+
+DeepSeek 无法依赖：
+
+```text
+parallel_tool_calls=False
+```
+
+确保 Sequential。
+
+最终改成：
+
+```text
+Provider 可能返回多个 Call
+↓
+Adapter defensive validation
+↓
+>1 calls
+→ explicit failure
+```
+
+---
+
+#### 4. Thinking Mode Compatibility
+
+DeepSeek Responses 默认可能使用 Thinking。
+
+当前 Contract 没有：
+
+```text
+Reasoning Continuity
+```
+
+所以 Stage 8 明确限制：
+
+```text
+reasoning effort = none
+```
+
+没有为了支持 reasoning 偷偷增加 Provider-specific State。
+
+---
+
+#### 5. Codex pytest Environment Error
+
+Codex 环境多次出现：
+
+```text
+tmp_path PermissionError
+```
+
+没有将环境错误误判为项目错误。
+
+最终通过：
+
+```text
+Human Local Regression
+```
+
+确定：
+
+```text
+204 passed
+0 warnings
+```
+
+---
+
+#### 6. Markdown Fence
+
+Final Review 发现：
+
+```text
+docs/codex-workflow.md
+```
+
+存在未关闭 fenced code block。
+
+该问题：
+
+```text
+不影响 Runtime
+不影响 Tests
+```
+
+但作为 Stage Closeout 文档质量问题进行了修复。
+
+---
+
+### 本阶段学到的知识
+
+- LLM Provider 不应该直接耦合 Agent Runtime
+- `ModelClient` 是 Dependency Inversion 的边界
+- Provider Adapter 可以隔离外部 API 变化
+- SDK 与 Provider 是两个不同概念
+- Dependency Injection 可以让真实 Provider 代码离线测试
+- Function Calling 不等于 Tool Execution
+- ToolResult 必须作为 Observation 返回模型
+- `call_id` 用于关联 Function Call 与 Function Output
+- Provider History 可以通过 Stateless Reconstruction 重建
+- Tool Failure 不一定意味着 Agent Failure
+- Sequential Calls 与 Parallel Calls 是两个不同概念
+- 不支持的 Provider Response 应 Explicit Failure，而不是 Silent Truncation
+- API Key 应通过环境变量管理
+- 自动化测试和真实 API Smoke Test 应严格分离
+- Provider Error 不应该伪装成 FinalAnswer
+- Repository Reality 必须优先于 Codex Sandbox 报告
+- Provider-neutral Architecture 可以降低切换外部模型服务的成本
+
+---
+
+### Stage 8 当前结论
+
+Stage 8 已经证明：
+
+```text
+InternScout Agent
+```
+
+现有的：
+
+```text
+Provider-Neutral Agent Runtime
+```
+
+可以：
+
+```text
+在不重新设计 AgentOrchestrator、
+ModelClient Contract、
+AgentState 和 Tool System 的情况下
+接入真实 DeepSeek Provider。
+```
+
+并真实完成：
+
+```text
+User
+→ DeepSeek
+→ ToolCall
+→ Tool
+→ Observation
+→ DeepSeek
+→ FinalAnswer
+```
+
+Stage 8 当前功能验收：
+
+```text
+Implementation:
+PASS
+
+Provider Isolation:
+PASS
+
+ModelClient Contract:
+PASS
+
+Offline Tests:
+PASS
+
+Full Regression:
+204 passed
+0 warnings
+
+Real FinalAnswer Smoke:
+PASS
+
+Real ToolCall Smoke:
+PASS
+
+Codex Final Review:
+MUST FIX = 0
+```
+
+Stage 8 下一步：
+
+```text
+Stage Review
++
+Development Log
+↓
+Final Regression
+↓
+Push Feature Branch
+↓
+Pull Request
+↓
+Merge to main
+↓
+Main Regression
+↓
+PROJECT_STATE Update
+↓
+Branch Cleanup
+```
