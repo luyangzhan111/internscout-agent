@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from app.agent.providers import deepseek_client
 from app.agent.contracts import (
     AgentResult,
     FinalAnswerResponse,
@@ -16,7 +17,7 @@ from app.agent.contracts import (
     ToolCall,
 )
 from app.agent.orchestrator import AgentOrchestrator
-from app.agent.providers.openai_client import OpenAIModelClient
+from app.agent.providers.deepseek_client import DeepSeekModelClient
 from app.agent.tools.base import BaseTool
 from app.agent.tools.registry import ToolRegistry
 
@@ -87,7 +88,7 @@ def execution(
         call=ToolCall(
             call_id=call_id,
             tool_name=tool_name,
-            arguments=arguments or {"city": "深圳"},
+            arguments=arguments if arguments is not None else {"city": "深圳"},
         ),
         result=ToolResult(
             call_id=call_id,
@@ -101,19 +102,59 @@ def execution(
 
 def test_constructor_requires_non_blank_model() -> None:
     with pytest.raises(ValueError, match="model cannot be blank"):
-        OpenAIModelClient(model="", client=FakeClient())
+        DeepSeekModelClient(model="", client=FakeClient())
+
+
+def test_default_sdk_configuration_uses_deepseek_key_and_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    captured: dict[str, Any] = {}
+
+    class FakeSDKClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(deepseek_client, "OpenAI", FakeSDKClient)
+
+    DeepSeekModelClient(model="deepseek-v4-flash")
+
+    assert captured == {
+        "api_key": "test-key",
+        "base_url": "https://api.deepseek.com",
+    }
+
+
+def test_constructor_requires_deepseek_key_without_injected_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    openai_called = False
+
+    def fail_if_called(**kwargs: Any) -> Any:
+        nonlocal openai_called
+        openai_called = True
+        raise AssertionError("SDK client must not be built without an API key")
+
+    monkeypatch.setattr(deepseek_client, "OpenAI", fail_if_called)
+
+    with pytest.raises(ValueError, match="DEEPSEEK_API_KEY is required"):
+        DeepSeekModelClient(model="deepseek-v4-flash")
+
+    assert openai_called is False
 
 
 def test_maps_final_answer_and_user_message() -> None:
     fake = FakeClient(response=response(output_text="可以帮你查询岗位。"))
-    client = OpenAIModelClient(model="gpt-test", client=fake)
+    client = DeepSeekModelClient(model="gpt-test", client=fake)
 
     result = client.generate(ModelRequest(user_message="帮我找岗位"))
 
     assert result == FinalAnswerResponse(answer="可以帮你查询岗位。")
     assert fake.responses.calls[0]["input"] == "帮我找岗位"
     assert fake.responses.calls[0]["model"] == "gpt-test"
-    assert fake.responses.calls[0]["parallel_tool_calls"] is False
+    assert fake.responses.calls[0]["reasoning"] == {"effort": "none"}
+    assert "parallel_tool_calls" not in fake.responses.calls[0]
 
 
 def test_maps_tool_definition_without_redefining_parameters() -> None:
@@ -123,7 +164,7 @@ def test_maps_tool_definition_without_redefining_parameters() -> None:
         parameters={"type": "object", "properties": {"city": {"type": "string"}}},
     )
     fake = FakeClient(response=response(output_text="完成。"))
-    OpenAIModelClient(model="gpt-test", client=fake).generate(
+    DeepSeekModelClient(model="gpt-test", client=fake).generate(
         ModelRequest(user_message="查询", tools=[definition])
     )
 
@@ -139,7 +180,7 @@ def test_maps_tool_definition_without_redefining_parameters() -> None:
 
 def test_maps_single_tool_call_and_json_object_arguments() -> None:
     fake = FakeClient(response=response(output=[function_call()]))
-    result = OpenAIModelClient(model="gpt-test", client=fake).generate(
+    result = DeepSeekModelClient(model="gpt-test", client=fake).generate(
         ModelRequest(user_message="查询深圳岗位")
     )
 
@@ -155,7 +196,7 @@ def test_maps_single_tool_call_and_json_object_arguments() -> None:
 def test_rejects_invalid_json_arguments() -> None:
     fake = FakeClient(response=response(output=[function_call(arguments="not-json")]))
     with pytest.raises(ValueError):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -164,7 +205,7 @@ def test_rejects_invalid_json_arguments() -> None:
 def test_rejects_non_object_json_arguments(arguments: str) -> None:
     fake = FakeClient(response=response(output=[function_call(arguments=arguments)]))
     with pytest.raises(ValueError, match="JSON object"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -178,9 +219,10 @@ def test_maps_successful_tool_execution_history() -> None:
         ],
     )
 
-    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+    DeepSeekModelClient(model="gpt-test", client=fake).generate(request)
 
     input_items = fake.responses.calls[0]["input"]
+    assert fake.responses.calls[0]["reasoning"] == {"effort": "none"}
     assert input_items[0] == {"role": "user", "content": "查询深圳岗位"}
     assert input_items[1] == {
         "type": "function_call",
@@ -212,7 +254,7 @@ def test_maps_failed_tool_execution_history() -> None:
         ],
     )
 
-    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+    DeepSeekModelClient(model="gpt-test", client=fake).generate(request)
 
     output = json.loads(fake.responses.calls[0]["input"][2]["output"])
     assert output == {
@@ -232,8 +274,9 @@ def test_maps_multiple_tool_executions_in_order() -> None:
         ],
     )
 
-    OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+    DeepSeekModelClient(model="gpt-test", client=fake).generate(request)
 
+    assert fake.responses.calls[0]["reasoning"] == {"effort": "none"}
     input_items = fake.responses.calls[0]["input"]
     assert [item.get("call_id") for item in input_items[1:]] == [
         "call_001",
@@ -257,7 +300,7 @@ def test_rejects_non_json_serializable_tool_history() -> None:
     )
 
     with pytest.raises(ValueError, match="JSON serializable"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(request)
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(request)
 
     assert fake.responses.calls == []
 
@@ -265,7 +308,7 @@ def test_rejects_non_json_serializable_tool_history() -> None:
 def test_propagates_provider_exception() -> None:
     fake = FakeClient(error=RuntimeError("provider unavailable"))
     with pytest.raises(RuntimeError, match="provider unavailable"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -273,7 +316,7 @@ def test_propagates_provider_exception() -> None:
 def test_rejects_multiple_function_calls() -> None:
     fake = FakeClient(response=response(output=[function_call(), function_call(call_id="call_002")]))
     with pytest.raises(ValueError, match="multiple function calls"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -284,7 +327,7 @@ def test_rejects_mixed_function_call_and_final_text() -> None:
     )
 
     with pytest.raises(ValueError, match="both a function call and a final answer"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -292,7 +335,7 @@ def test_rejects_mixed_function_call_and_final_text() -> None:
 def test_rejects_empty_provider_output() -> None:
     fake = FakeClient(response=response())
     with pytest.raises(ValueError, match="final answer or function call"):
-        OpenAIModelClient(model="gpt-test", client=fake).generate(
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )
 
@@ -321,7 +364,7 @@ def test_completes_offline_agent_loop_with_success_observation() -> None:
     registry.register(RecordingSearchTool())
 
     result = AgentOrchestrator(
-        model_client=OpenAIModelClient(model="gpt-test", client=fake),
+        model_client=DeepSeekModelClient(model="gpt-test", client=fake),
         tool_registry=registry,
     ).run("查询深圳岗位")
 
@@ -350,7 +393,7 @@ def test_completes_offline_agent_loop_with_failed_observation() -> None:
     registry.register(RecordingSearchTool())
 
     result = AgentOrchestrator(
-        model_client=OpenAIModelClient(model="gpt-test", client=fake),
+        model_client=DeepSeekModelClient(model="gpt-test", client=fake),
         tool_registry=registry,
     ).run("查询岗位")
 

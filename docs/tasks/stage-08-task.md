@@ -20,13 +20,13 @@ Stage 8 的目标是：
 第一版 Provider：
 
 ```text
-OpenAI
+DeepSeek
 ```
 
 第一版 API：
 
 ```text
-OpenAI Responses API
+DeepSeek Responses API
 ```
 
 Stage 8 完成后，目标链路：
@@ -38,9 +38,9 @@ AgentOrchestrator
 ↓
 ModelClient
 ↓
-OpenAIModelClient
+DeepSeekModelClient
 ↓
-OpenAI Responses API
+DeepSeek Responses API
 ↓
 Provider Response
 ↓
@@ -152,7 +152,7 @@ app/agent/orchestrator.py
 加入：
 
 ```text
-OpenAI
+DeepSeek
 Responses API
 API Key
 Provider-specific parsing
@@ -192,7 +192,7 @@ STOP
 
 ## 4.3 Provider Adapter Isolated
 
-OpenAI 专属实现放入：
+DeepSeek 专属实现放入：
 
 ```text
 app/agent/providers/
@@ -203,13 +203,13 @@ app/agent/providers/
 ```text
 app/agent/providers/
 ├── __init__.py
-└── openai_client.py
+└── deepseek_client.py
 ```
 
 核心实现：
 
 ```text
-OpenAIModelClient
+DeepSeekModelClient
 ```
 
 Provider-specific code 不进入：
@@ -301,7 +301,7 @@ repeatable
 pytest
 ```
 
-过程中访问真实 OpenAI API。
+过程中访问真实 DeepSeek API。
 
 不得要求 CI 拥有真实 API Key。
 
@@ -309,11 +309,28 @@ pytest
 
 ## 4.7 Stage 8 Model Compatibility Boundary
 
-Stage 8 第一版 OpenAI Provider 只要求支持：
+Stage 8 第一版 DeepSeek Provider 只要求支持：
 
 ```text
-non-reasoning OpenAI models
+non-reasoning DeepSeek models
 ```
+
+本轮使用 DeepSeek Responses API：
+
+```text
+base_url = https://api.deepseek.com
+models = deepseek-v4-flash / deepseek-v4-pro
+reasoning = {"effort": "none"}
+```
+
+底层继续使用 OpenAI Python SDK 作为兼容 SDK。模型名称必须通过
+constructor / configuration 传入，Runtime 不硬编码模型名。DeepSeek
+Responses API 是 stateless；Stage 8 不支持 reasoning continuity、reasoning
+item persistence 或 provider conversation state。
+
+DeepSeek 可能忽略 `parallel_tool_calls` 并返回多个 function calls，因此该
+参数不能作为 Sequential guarantee。Adapter 必须拒绝一次响应中的多个
+function calls；Stage 8 仍只支持 Sequential Tool Calling。
 
 ---
 
@@ -329,7 +346,7 @@ ModelClient contract
 Agent Contract
 ```
 
-`OpenAIModelClient` 可以通过 constructor / configuration 获得 model name。
+`DeepSeekModelClient` 可以通过 constructor / configuration 获得 model name。
 
 具体 smoke-test 模型在执行 live verification 时根据当时可用模型单独确定。
 
@@ -341,10 +358,10 @@ Stage 8 预计新增：
 
 ```text
 app/agent/providers/__init__.py
-app/agent/providers/openai_client.py
+app/agent/providers/deepseek_client.py
 
 tests/agent/providers/__init__.py
-tests/agent/providers/test_openai_client.py
+tests/agent/providers/test_deepseek_client.py
 ```
 
 可能修改：
@@ -433,14 +450,14 @@ Stage 8 的目的：
 
 ---
 
-# 8. OpenAIModelClient Responsibilities
+# 8. DeepSeekModelClient Responsibilities
 
-`OpenAIModelClient` 只负责：
+`DeepSeekModelClient` 只负责：
 
 ```text
 Internal Contract
 ↕
-OpenAI Provider Contract
+DeepSeek Provider Contract
 ```
 
 具体职责：
@@ -491,7 +508,7 @@ description
 parameters
 ```
 
-Stage 8 必须将其转换成 OpenAI function/tool definition。
+Stage 8 必须将其转换成 DeepSeek function/tool definition。
 
 映射必须保留：
 
@@ -644,7 +661,7 @@ Tool Failure ≠ Agent Failure
 
 # 14. Provider Response Mapping
 
-OpenAIModelClient 必须将 Provider Response 严格映射成现有：
+DeepSeekModelClient 必须将 Provider Response 严格映射成现有：
 
 ```text
 ToolCallResponse
@@ -807,7 +824,7 @@ API Key：
 例如：
 
 ```text
-OPENAI_API_KEY
+DEEPSEEK_API_KEY
 ```
 
 Stage 8 不为了加载 `.env` 自动引入额外配置 Framework。
@@ -825,7 +842,7 @@ Stage 8 不为了加载 `.env` 自动引入额外配置 Framework。
 Stage 8 自动化测试必须使用：
 
 ```text
-Fake / Mock OpenAI SDK Client
+Fake / Mock DeepSeek SDK-compatible Client
 ```
 
 不得产生真实网络请求。
@@ -841,7 +858,7 @@ Fake / Mock OpenAI SDK Client
 验证：
 
 ```text
-OpenAIModelClient.generate()
+DeepSeekModelClient.generate()
 ↓
 FinalAnswerResponse
 ```
@@ -1023,7 +1040,7 @@ Live Test：
 ```text
 User
 ↓
-Real OpenAIModelClient
+Real DeepSeekModelClient
 ↓
 FinalAnswer
 ```
@@ -1033,7 +1050,7 @@ FinalAnswer
 ```text
 User
 ↓
-Real OpenAIModelClient
+Real DeepSeekModelClient
 ↓
 ToolCall
 ↓
@@ -1041,7 +1058,7 @@ Existing Tool
 ↓
 Observation
 ↓
-Real OpenAIModelClient
+Real DeepSeekModelClient
 ↓
 FinalAnswer
 ```
@@ -1049,6 +1066,7 @@ FinalAnswer
 Smoke Test 必须使用：
 
 ```text
+默认模型：deepseek-v4-flash
 测试用途数据
 最少调用次数
 ```
@@ -1068,7 +1086,7 @@ Stage 8 建议拆为以下执行阶段。
 目标：
 
 ```text
-确认当前OpenAI SDK接口
+确认当前 DeepSeek Responses API 接口（使用 OpenAI Python SDK）
 确认Responses API调用方式
 确认Function Tool格式
 确认Provider Response结构
@@ -1098,14 +1116,14 @@ Response Mapping
 
 ---
 
-## Stage 8B — OpenAIModelClient Core
+## Stage 8B — DeepSeekModelClient Core
 
 目标：
 
 实现：
 
 ```text
-OpenAIModelClient
+DeepSeekModelClient
 ```
 
 包括：
@@ -1310,7 +1328,7 @@ Minimum Fix
 
 Stage 8 只有全部满足以下条件才算完成。
 
-- [ ] OpenAI Provider 与现有 `ModelClient` 对接
+- [ ] DeepSeek Provider 与现有 `ModelClient` 对接
 - [ ] 使用 Responses API
 - [ ] AgentOrchestrator 不包含 Provider-specific code
 - [ ] 现有 ModelClient Contract 保持稳定
@@ -1366,7 +1384,7 @@ Stage 8 完成后开发者必须能够解释：
 Stage 8 的真正成功标准不是：
 
 ```text
-成功调用了一次OpenAI API
+成功调用了一次 DeepSeek API
 ```
 
 而是：

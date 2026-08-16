@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any
 
 from openai import OpenAI
@@ -13,8 +14,8 @@ from app.agent.contracts import (
 from app.agent.model_client import ModelClient
 
 
-class OpenAIModelClient(ModelClient):
-    """Adapt the provider-neutral model contract to OpenAI Responses."""
+class DeepSeekModelClient(ModelClient):
+    """Adapt the provider-neutral model contract to DeepSeek Responses."""
 
     def __init__(
         self,
@@ -25,7 +26,18 @@ class OpenAIModelClient(ModelClient):
             raise ValueError("model cannot be blank")
 
         self.model = model
-        self._client = client if client is not None else OpenAI()
+        if client is not None:
+            self._client = client
+        else:
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "DEEPSEEK_API_KEY is required when no client is injected."
+                )
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.deepseek.com",
+            )
 
     def generate(
         self,
@@ -35,7 +47,7 @@ class OpenAIModelClient(ModelClient):
             model=self.model,
             input=self._map_input(request),
             tools=[self._map_tool(tool) for tool in request.tools],
-            parallel_tool_calls=False,
+            reasoning={"effort": "none"},
         )
         return self._map_response(response)
 
@@ -57,7 +69,7 @@ class OpenAIModelClient(ModelClient):
                     "type": "function_call",
                     "call_id": execution.call.call_id,
                     "name": execution.call.tool_name,
-                    "arguments": OpenAIModelClient._serialize_json(
+                    "arguments": DeepSeekModelClient._serialize_json(
                         execution.call.arguments,
                         "Tool call arguments",
                     ),
@@ -78,7 +90,7 @@ class OpenAIModelClient(ModelClient):
                 {
                     "type": "function_call_output",
                     "call_id": result.call_id,
-                    "output": OpenAIModelClient._serialize_json(
+                    "output": DeepSeekModelClient._serialize_json(
                         observation,
                         "Tool result observation",
                     ),
@@ -113,7 +125,7 @@ class OpenAIModelClient(ModelClient):
 
         if len(function_calls) > 1:
             raise ValueError(
-                "OpenAI response contains multiple function calls; "
+                "DeepSeek response contains multiple function calls; "
                 "parallel tool calling is not supported."
             )
 
@@ -121,7 +133,7 @@ class OpenAIModelClient(ModelClient):
             answer = getattr(response, "output_text", None)
             if isinstance(answer, str) and answer.strip():
                 raise ValueError(
-                    "OpenAI response cannot contain both a function call and a "
+                    "DeepSeek response cannot contain both a function call and a "
                     "final answer."
                 )
 
@@ -129,7 +141,7 @@ class OpenAIModelClient(ModelClient):
             arguments = json.loads(call.arguments)
             if not isinstance(arguments, dict):
                 raise ValueError(
-                    "OpenAI function call arguments must be a JSON object."
+                    "DeepSeek function call arguments must be a JSON object."
                 )
 
             return ToolCallResponse(
@@ -143,7 +155,7 @@ class OpenAIModelClient(ModelClient):
         answer = getattr(response, "output_text", None)
         if not isinstance(answer, str) or not answer.strip():
             raise ValueError(
-                "OpenAI response did not contain a final answer or function call."
+                "DeepSeek response did not contain a final answer or function call."
             )
 
         return FinalAnswerResponse(answer=answer)
