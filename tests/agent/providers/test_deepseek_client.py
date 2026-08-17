@@ -75,6 +75,14 @@ def function_call(
     )
 
 
+def output_message(*, text: str, phase: str | None) -> Any:
+    return SimpleNamespace(
+        type="message",
+        phase=phase,
+        content=[SimpleNamespace(type="output_text", text=text)],
+    )
+
+
 def execution(
     *,
     call_id: str = "call_001",
@@ -321,12 +329,64 @@ def test_rejects_multiple_function_calls() -> None:
         )
 
 
+def test_maps_commentary_message_with_function_call() -> None:
+    fake = FakeClient(
+        response=response(
+            output_text="我来为您查询数据库中深圳的实习岗位。",
+            output=[
+                output_message(
+                    text="我来为您查询数据库中深圳的实习岗位。",
+                    phase="commentary",
+                ),
+                function_call(),
+            ],
+        )
+    )
+
+    result = DeepSeekModelClient(model="gpt-test", client=fake).generate(
+        ModelRequest(user_message="查询深圳岗位")
+    )
+
+    assert result == ToolCallResponse(
+        tool_call=ToolCall(
+            call_id="call_001",
+            tool_name="search_jobs",
+            arguments={"city": "深圳"},
+        )
+    )
+
+
 def test_rejects_mixed_function_call_and_final_text() -> None:
     fake = FakeClient(
-        response=response(output_text="最终答案", output=[function_call()])
+        response=response(
+            output_text="最终答案",
+            output=[
+                output_message(text="最终答案", phase="final_answer"),
+                function_call(),
+            ],
+        )
     )
 
     with pytest.raises(ValueError, match="both a function call and a final answer"):
+        DeepSeekModelClient(model="gpt-test", client=fake).generate(
+            ModelRequest(user_message="查询")
+        )
+
+
+@pytest.mark.parametrize("phase", [None, "future_phase", ""])
+def test_rejects_unsupported_message_phase_with_function_call(
+    phase: str | None,
+) -> None:
+    fake = FakeClient(
+        response=response(
+            output=[
+                output_message(text="状态消息", phase=phase),
+                function_call(),
+            ]
+        )
+    )
+
+    with pytest.raises(ValueError, match="unsupported message phase"):
         DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )

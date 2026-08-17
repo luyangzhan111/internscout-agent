@@ -130,12 +130,35 @@ class DeepSeekModelClient(ModelClient):
             )
 
         if function_calls:
-            answer = getattr(response, "output_text", None)
-            if isinstance(answer, str) and answer.strip():
+            output_items = getattr(response, "output", []) or []
+            message_items = [
+                item
+                for item in output_items
+                if getattr(item, "type", None) == "message"
+            ]
+            message_phases = {
+                getattr(item, "phase", None)
+                for item in message_items
+            }
+            if message_items and "final_answer" in message_phases:
                 raise ValueError(
                     "DeepSeek response cannot contain both a function call and a "
                     "final answer."
                 )
+
+            if message_items and message_phases != {"commentary"}:
+                raise ValueError(
+                    "DeepSeek response contains a function call with an "
+                    "unsupported message phase."
+                )
+
+            if not message_items:
+                answer = getattr(response, "output_text", None)
+                if isinstance(answer, str) and answer.strip():
+                    raise ValueError(
+                        "DeepSeek response cannot contain both a function call and "
+                        "a final answer."
+                    )
 
             call = function_calls[0]
             arguments = json.loads(call.arguments)
