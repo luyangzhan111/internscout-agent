@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api import (
+    agent_router,
     crawl_router,
     health_router,
     jobs_router,
@@ -43,6 +44,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(jobs_router)
 app.include_router(crawl_router)
+app.include_router(agent_router)
 
 
 @app.get("/")

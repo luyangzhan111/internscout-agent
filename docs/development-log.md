@@ -2668,3 +2668,1069 @@ PROJECT_STATE Update
 ↓
 Branch Cleanup
 ```
+
+## 阶段9：Agent HTTP API 与应用集成
+
+### 本阶段目标
+
+Stage 9 的核心目标是将 Stage 7 已完成的 provider-neutral Agent Runtime、Stage 8 已完成的 DeepSeek Provider Adapter，以及现有 FastAPI、Job Tools、Repository 与 SQLite 数据层正式组合为一个可以通过 HTTP 调用的 Agent Application。
+
+目标链路：
+
+```text
+HTTP Client
+↓
+POST /api/agent/query
+↓
+FastAPI
+↓
+AgentOrchestrator
+↓
+ModelClient
+↓
+DeepSeekModelClient
+↓
+DeepSeek Responses API
+↓
+ToolCall
+↓
+Job Tool
+↓
+RepositoryJobQueryAdapter
+↓
+Repository Functions
+↓
+SQLite
+↓
+Observation
+↓
+DeepSeek
+↓
+FinalAnswer
+↓
+HTTP Response
+```
+
+Stage 9 不重新设计 Stage 7 / Stage 8 的 Agent Runtime，而是补齐 Application Integration 与 HTTP Boundary。
+
+---
+
+### 本阶段完成
+
+- 创建 `docs/tasks/stage-09-task.md`
+- 完成 Stage 9 Architecture Gate
+- 新增 FastAPI Agent Application Composition Root
+- 新增 `get_model_client`
+- 新增 `get_agent_orchestrator`
+- 使用 `DEEPSEEK_API_KEY` 与 `DEEPSEEK_MODEL` 作为 server-side Provider 配置
+- DeepSeek Provider 采用 lazy application-level reuse
+- 保持 SQLAlchemy Session、RepositoryJobQueryAdapter、Job Tools、ToolRegistry 与 AgentOrchestrator request-scoped
+- 固定生产 Tool 注册顺序：
+  1. `SearchJobsTool`
+  2. `GetJobDetailTool`
+- 新增 `AgentQueryRequest`
+- 新增 `AgentQueryResponse`
+- 新增 `POST /api/agent/query`
+- HTTP API 保持单次 Request 对应单次独立 Agent Run
+- HTTP Response 只暴露 `answer`、`steps` 与 `tool_execution_count`
+- 不向客户端暴露 ToolExecution、Observation 或 Provider Raw Response
+- 实现 HTTP 422 / 500 / 503 第一版错误边界
+- 新增 11 个 Agent HTTP Offline Integration Tests
+- 使用 FakeModelClient 隔离真实 Provider
+- 保留真实 AgentOrchestrator、ToolRegistry、Job Tools、RepositoryJobQueryAdapter、Repository 与 SQLite 测试路径
+- 完成真实 DeepSeek Agent Tool Loop Smoke
+- 完成真实 DeepSeek HTTP Agent Smoke
+- 在真实 Provider Smoke 中发现并修复 DeepSeek commentary + function_call 兼容问题
+- 完成 Stage 9 Codex Final Read-Only Review
+- Final Review `MUST FIX = 0`
+- Final Verdict：`READY FOR STAGE 9 CLOSEOUT`
+
+---
+
+### Stage 9 主要 Commit
+
+```text
+10b602e
+docs: add stage 9 task spec
+
+d2eaa9e
+feat: add agent application dependencies
+
+b8fcdc5
+feat: add agent query API
+
+465d524
+test: add agent API integration coverage
+
+b9b7181
+fix: support DeepSeek commentary tool calls
+```
+
+以上 commit identity 以真实 Git Repository Reality 为准。
+
+Stage 9 最终 merge identity 当前仍为：
+
+```text
+UNKNOWN
+```
+
+必须等 PR 实际 merge 后再记录。
+
+---
+
+### Agent HTTP Contract
+
+新增接口：
+
+```text
+POST /api/agent/query
+```
+
+Request：
+
+```json
+{
+  "user_message": "请查询深圳的实习岗位"
+}
+```
+
+第一版只允许客户端提供：
+
+```text
+user_message
+```
+
+不允许客户端控制：
+
+```text
+provider
+model
+api_key
+max_steps
+reasoning
+tools
+tool_choice
+conversation_id
+```
+
+这些继续作为 server-side policy。
+
+Response：
+
+```json
+{
+  "answer": "...",
+  "steps": 2,
+  "tool_execution_count": 1
+}
+```
+
+Stage 9 明确保持：
+
+```text
+Internal Agent Trace
+!=
+Public HTTP Contract
+```
+
+因此没有直接暴露：
+
+```text
+ToolCall
+ToolResult
+ToolExecution
+Observation
+Provider Raw Response
+```
+
+---
+
+### Application Composition Root
+
+新增：
+
+```text
+app/api/dependencies.py
+```
+
+作为 FastAPI Application Composition Root。
+
+生产对象图：
+
+```text
+SQLAlchemy Session
+↓
+RepositoryJobQueryAdapter
+↓
+SearchJobsTool
+GetJobDetailTool
+↓
+ToolRegistry
+↓
+AgentOrchestrator
+```
+
+`get_agent_orchestrator` 负责在每个 HTTP Request 中构建上述 request-scoped object graph。
+
+两个 Job Tools 共享同一个：
+
+```text
+RepositoryJobQueryAdapter
+```
+
+因此也共享当前 Request 的 SQLAlchemy Session。
+
+没有任何持有 Session 的 Adapter、Tool、Registry 或 Orchestrator 被全局缓存。
+
+---
+
+### DeepSeek ModelClient Dependency
+
+新增：
+
+```text
+get_model_client()
+```
+
+Provider 配置：
+
+```text
+DEEPSEEK_API_KEY
+DEEPSEEK_MODEL
+```
+
+两者均来自 server environment。
+
+没有将：
+
+```text
+API Key
+Model Name
+```
+
+暴露为 HTTP Request 参数。
+
+`DeepSeekModelClient` 采用 lazy application-level reuse。
+
+因此：
+
+```text
+import app.main
+```
+
+不会立即创建真实 Provider Client，也不会要求 DeepSeek API Key。
+
+只有真正调用：
+
+```text
+/api/agent/query
+```
+
+时才需要 Agent Provider configuration。
+
+这样已有：
+
+```text
+/api/health
+/api/jobs
+/api/crawl
+```
+
+和自动化测试不会因为 DeepSeek 配置不存在而失效。
+
+---
+
+### Dependency Lifecycle
+
+Stage 9 明确区分：
+
+```text
+Application Scope
+```
+
+与：
+
+```text
+Request Scope
+```
+
+当前：
+
+```text
+DeepSeekModelClient
+→ lazy application-level reuse
+```
+
+因为 Provider Adapter 当前是 stateless。
+
+而：
+
+```text
+SQLAlchemy Session
+RepositoryJobQueryAdapter
+SearchJobsTool
+GetJobDetailTool
+ToolRegistry
+AgentOrchestrator
+```
+
+均保持：
+
+```text
+request-scoped
+```
+
+原因是 RepositoryJobQueryAdapter 持有 SQLAlchemy Session。
+
+如果将整个 Orchestrator 或 ToolRegistry 全局缓存：
+
+```text
+Request 结束
+↓
+Session 关闭
+↓
+下一 Request 仍复用旧 Adapter
+```
+
+可能产生 closed-session lifecycle bug。
+
+---
+
+### HTTP Error Boundary
+
+Stage 9 第一版：
+
+```text
+Invalid Request
+→ HTTP 422
+```
+
+包括：
+
+```text
+missing user_message
+empty user_message
+whitespace-only user_message
+unexpected request field
+```
+
+Provider server configuration 不可用：
+
+```text
+DEEPSEEK_API_KEY missing
+DEEPSEEK_MODEL missing
+```
+
+返回：
+
+```text
+HTTP 503
+```
+
+Sanitized response：
+
+```text
+Agent model service is unavailable.
+```
+
+Unexpected Agent / Model runtime exception：
+
+```text
+HTTP 500
+```
+
+Sanitized response：
+
+```text
+Agent service encountered an unexpected error.
+```
+
+当前没有在 FastAPI 层引入 DeepSeek / OpenAI SDK exception 类型。
+
+Provider-specific exception taxonomy 留待后续独立 Architecture Decision。
+
+---
+
+### Tool Failure 与 HTTP Failure
+
+继续保持 Stage 7 语义：
+
+```text
+Tool Failure
+!=
+Agent Failure
+!=
+HTTP Failure
+```
+
+例如 Tool 参数错误：
+
+```text
+Tool validation failure
+↓
+ToolResult(success=False)
+↓
+Observation
+↓
+Model receives failure
+↓
+Model continues
+↓
+FinalAnswer
+↓
+HTTP 200
+```
+
+Stage 9 Offline Integration Test 已验证该路径。
+
+---
+
+### Offline HTTP Integration Testing
+
+新增：
+
+```text
+tests/test_agent_api.py
+```
+
+自动化测试只替换：
+
+```text
+get_session
+get_model_client
+```
+
+不会替换：
+
+```text
+get_agent_orchestrator
+AgentOrchestrator
+ToolRegistry
+SearchJobsTool
+GetJobDetailTool
+RepositoryJobQueryAdapter
+Repository Functions
+```
+
+因此真实测试链路：
+
+```text
+HTTP
+↓
+FastAPI
+↓
+real AgentOrchestrator
+↓
+FakeModelClient
+↓
+real ToolRegistry
+↓
+real Job Tools
+↓
+real RepositoryJobQueryAdapter
+↓
+real Repository
+↓
+temporary SQLite
+↓
+Observation
+↓
+FakeModelClient
+↓
+FinalAnswer
+↓
+HTTP
+```
+
+---
+
+### Stage 9D 测试问题：422 被 503 覆盖
+
+第一版 Invalid Request Tests 出现：
+
+```text
+Expected:
+422
+
+Actual:
+503
+```
+
+原因并不是 HTTP Schema 失效。
+
+测试同时存在：
+
+```text
+invalid request
++
+missing DeepSeek configuration
+```
+
+而测试没有 override：
+
+```text
+get_model_client
+```
+
+因此 Provider Dependency 先返回 503。
+
+最终对 Validation Test 单独注入 FakeModelClient，并确认：
+
+```text
+fake_model.requests == []
+```
+
+证明非法 HTTP Request 在模型调用之前已经被拒绝。
+
+专门的 Missing Provider Config Test 则继续使用真实：
+
+```text
+get_model_client
+```
+
+验证：
+
+```text
+valid request
++
+missing provider config
+→ HTTP 503
+```
+
+两个错误场景因此被正确隔离。
+
+---
+
+### max_steps Test Hardening
+
+Agent 默认：
+
+```text
+max_steps = 5
+```
+
+测试最初只检查：
+
+```text
+HTTP 500
+```
+
+但 Route 会将不同 runtime exception 都映射为同一个 sanitized 500。
+
+因此存在理论上的 false-positive：
+
+```text
+FakeModelClient responses exhausted
+→ exception
+→ HTTP 500
+```
+
+也可能让测试错误通过。
+
+最终增加：
+
+```text
+assert len(fake_model.requests) == 5
+```
+
+证明：
+
+```text
+AgentOrchestrator
+```
+
+在第 6 次 Model call 之前由真实 max_steps boundary 停止。
+
+---
+
+### Stage 9E Real DeepSeek Compatibility Issue
+
+Offline Tests 全部通过后，首次真实 DeepSeek HTTP Agent Smoke 返回：
+
+```text
+HTTP 500
+```
+
+先直接执行最小 Provider Smoke：
+
+```text
+DeepSeekModelClient
+→ DeepSeek
+→ FinalAnswerResponse
+```
+
+结果：
+
+```text
+PASS
+```
+
+因此排除：
+
+```text
+API Key
+Model Name
+基础 Responses API
+FinalAnswer Mapping
+```
+
+问题继续缩小到真实 Tool Calling。
+
+直接运行真实 Agent Tool Loop 后获得：
+
+```text
+ValueError:
+DeepSeek response cannot contain both a function call and a final answer.
+```
+
+---
+
+### Raw Provider Diagnosis
+
+通过 Raw Provider Response Diagnostic 发现真实 DeepSeek 返回：
+
+```text
+ResponseOutputMessage
+phase="commentary"
+text="我来为您查询数据库中深圳的实习岗位。"
+```
+
+以及：
+
+```text
+ResponseFunctionToolCall
+name="search_jobs"
+```
+
+也就是：
+
+```text
+commentary message
++
+function_call
+```
+
+旧版 `DeepSeekModelClient` 直接使用：
+
+```text
+response.output_text
+```
+
+判断是否存在 FinalAnswer。
+
+因此 commentary text 被错误判断为 FinalAnswer，合法 ToolCall 被拒绝。
+
+---
+
+### DeepSeek Provider Compatibility Fix
+
+修复限定在：
+
+```text
+app/agent/providers/deepseek_client.py
+tests/agent/providers/test_deepseek_client.py
+```
+
+没有修改：
+
+```text
+AgentOrchestrator
+ModelClient Contract
+Tool System
+FastAPI
+Database
+```
+
+新的 Provider mapping：
+
+```text
+function_call only
+→ ToolCallResponse
+```
+
+```text
+phase="commentary"
++
+function_call
+→ ToolCallResponse
+```
+
+```text
+phase="final_answer"
++
+function_call
+→ ValueError
+```
+
+```text
+unsupported / blank / missing phase
++
+function_call
+→ ValueError
+```
+
+同时继续拒绝：
+
+```text
+multiple function calls
+invalid JSON arguments
+non-object arguments
+empty provider output
+```
+
+这次真实问题最终只需要修改 Provider Adapter，证明 Stage 7 / Stage 8 的 Provider Boundary 设计有效。
+
+---
+
+### Real DeepSeek Agent Tool Loop
+
+修复后再次运行真实 Agent：
+
+```text
+SUCCESS
+```
+
+结果：
+
+```text
+steps:
+2
+
+tool_execution_count:
+1
+
+tool_name:
+search_jobs
+
+tool_success:
+True
+
+tool_error:
+None
+```
+
+最终回答来自当前 SQLite 中真实岗位数据。
+
+真实闭环：
+
+```text
+DeepSeek
+↓
+commentary
+↓
+ToolCall
+↓
+SearchJobsTool
+↓
+SQLite
+↓
+Observation
+↓
+DeepSeek
+↓
+FinalAnswer
+```
+
+验证通过。
+
+---
+
+### Real HTTP Agent Smoke
+
+随后启动 FastAPI，并执行：
+
+```text
+POST /api/agent/query
+```
+
+最终返回：
+
+```text
+answer:
+non-empty
+
+steps:
+2
+
+tool_execution_count:
+1
+```
+
+回答包含当前数据库中的深圳岗位，例如：
+
+```text
+Python后端实习生
+DevOps实习生
+```
+
+因此完整生产链路已经验证：
+
+```text
+HTTP Client
+↓
+FastAPI
+↓
+AgentOrchestrator
+↓
+Real DeepSeek
+↓
+ToolCall
+↓
+SQLite Query
+↓
+Observation
+↓
+Real DeepSeek
+↓
+FinalAnswer
+↓
+HTTP Response
+```
+
+---
+
+### 自动化测试
+
+Stage 9 开始前：
+
+```text
+204 passed
+0 warnings
+```
+
+Stage 9 Final Review：
+
+```text
+Provider targeted:
+24 passed
+
+Agent subsystem:
+94 passed
+
+Full project:
+219 passed
+
+Warnings:
+0
+```
+
+因此 Stage 9 新增后：
+
+```text
+204
+↓
+219
+```
+
+新增：
+
+```text
+15 automated tests
+```
+
+同时完成：
+
+```text
+Real DeepSeek Agent Tool Loop
+PASS
+
+Real HTTP Agent Smoke
+PASS
+```
+
+真实 Provider verification 与 pytest 保持分离。
+
+---
+
+### Codex Sandbox Environment
+
+Stage 9 中 Codex Sandbox 再次出现 pytest：
+
+```text
+PermissionError
+```
+
+错误发生在：
+
+```text
+temporary directory
+pytest cache
+```
+
+而不是业务 assertion。
+
+Human local `.venv`：
+
+```text
+219 passed
+0 warnings
+```
+
+作为 authoritative result。
+
+---
+
+### Stage 9 Final Codex Review
+
+Final Review 使用 High Reasoning Model。
+
+Repository Reality：
+
+```text
+Branch:
+feat/stage-09-agent-http-api
+
+Working tree:
+clean
+```
+
+Final Review：
+
+```text
+MUST FIX = 0
+```
+
+Architecture Compliance：
+
+```text
+HTTP contract:
+PASS
+
+Composition root:
+PASS
+
+Dependency lifecycle:
+PASS
+
+Provider-neutral Agent Runtime:
+PASS
+
+Tool / database boundary:
+PASS
+
+AgentState per-run:
+PASS
+
+Sequential Tool Calling:
+PASS
+
+Provider isolation:
+PASS
+
+Provider commentary compatibility:
+PASS
+
+Offline test isolation:
+PASS
+
+Secret safety:
+PASS
+
+Stage 9 scope control:
+PASS
+```
+
+Final Verdict：
+
+```text
+READY FOR STAGE 9 CLOSEOUT
+```
+
+---
+
+### Final Review SHOULD FIX
+
+Final Review 发现一个非阻塞建议：
+
+```text
+补充 legacy mixed response branch 的独立 regression test
+```
+
+当前 Production behavior 已经正确保留：
+
+```text
+non-message output_text
++
+function_call
+→ reject
+```
+
+但该 branch 当前缺少独立测试覆盖。
+
+Review 将其分类为：
+
+```text
+SHOULD FIX
+```
+
+不是：
+
+```text
+MUST FIX
+```
+
+Stage 9 当前不为这个非阻塞测试建议扩大 closeout scope。
+
+---
+
+### 本阶段学到的知识
+
+- FastAPI `Depends` 可以作为 Application Composition 的基础
+- Composition Root 应集中负责 concrete implementation wiring
+- request-scoped object 不能因为方便而随意全局缓存
+- stateless Provider Client 可以与 request-scoped Agent Runtime 使用不同生命周期
+- FastAPI `dependency_overrides` 可以只替换 Provider Boundary，同时保留真实应用集成路径
+- HTTP Validation 与 Dependency Resolution 可能同时影响最终状态码
+- 测试必须隔离当前真正想验证的行为
+- 仅检查 HTTP status 可能产生 false-positive
+- Offline Fake Tests 无法完全代替 Real Provider Smoke
+- Provider Adapter 不只是 SDK wrapper，而是 External Contract 与 Internal Contract 的转换层
+- Provider response mapping 应采用 defensive parsing
+- Provider 特殊行为应该被限制在 Adapter，而不是泄漏到 Agent Runtime
+
+---
+
+### 当前 Stage 9 状态
+
+```text
+Implementation:
+COMPLETE
+
+Automated Tests:
+219 passed
+
+Warnings:
+0
+
+Real DeepSeek Tool Loop:
+PASS
+
+Real HTTP Agent Smoke:
+PASS
+
+Final Review:
+MUST FIX = 0
+
+Final Verdict:
+READY FOR STAGE 9 CLOSEOUT
+```
+
+尚需完成：
+
+```text
+Stage 9 Review / Development Log commit
+push feature branch
+create PR
+merge
+post-merge main regression
+PROJECT_STATE update
+branch cleanup
+```
+
+Stage 9 最终 Merge Identity：
+
+```text
+UNKNOWN
+```
+
+必须等真实 PR merge 后确定。
