@@ -6,15 +6,16 @@
 
 # 1. Project Overview
 
-InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信息采集、处理、存储、查询，并逐步扩展智能分析能力的练习型软件工程项目。
+InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信息采集、处理、存储、查询与智能分析练习型软件工程项目。
 
 当前已具备：
 
 - 岗位数据模型、Mock HTML 采集、数据清洗、去重与 SQLite 持久化
 - Repository 查询、REST API、筛选、分页与 HTTP 服务闭环
-- provider-neutral Agent Contract、Tool System、Tool-Calling Agent Runtime 与 AgentOrchestrator
+- provider-neutral Agent Contract、Tool System、Tool-Calling Agent Runtime 与 `AgentOrchestrator`
 - Tool / Repository 的 Port / Adapter 解耦
 - DeepSeek 真实 LLM Provider Adapter 与真实 Provider smoke 验证
+- 每次请求独立运行的 Agent HTTP API
 - 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
 
 # 2. Core Technology Stack
@@ -34,28 +35,22 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 
 # 3. Current Version Identity
 
-## Current branch
+## Stage 9 Merge Identity
 
 ```text
-main
+30062fc
 ```
 
-## Stage 8 Merge Identity
+Full identity：
 
 ```text
-796db56
+30062fc5bdeef58bd54ede441f803450301378ad
 ```
 
-对应：
+对应 merge：
 
 ```text
-Merge pull request #8 from luyangzhan111/feat/stage-08-real-model-provider
-```
-
-Stage 8 feature branch：
-
-```text
-feat/stage-08-real-model-provider
+Merge pull request #9 from luyangzhan111/feat/stage-09-agent-http-api
 ```
 
 ## Snapshot Basis
@@ -64,48 +59,43 @@ feat/stage-08-real-model-provider
 Branch:
 main
 
-Stage 8 merge commit:
-796db56
+Stage 9 merge commit:
+30062fc
 
 Working tree before PROJECT_STATE update:
 clean
 
 Full regression:
-204 passed, 0 warnings
+219 passed, 0 warnings
 ```
 
-`796db56` 是 Stage 8 功能合并至 `main` 的版本身份；后续仅更新 `PROJECT_STATE.md` 的文档 commit 不替代该身份。
+`30062fc` 是 Stage 9 功能合并至 `main` 的版本身份。后续仅更新 `PROJECT_STATE.md` 的文档 commit 不替代 Stage 9 feature merge identity。
 
-Historical Identity：Stage 7 merge commit 为 `5c5f528`，不表示当前版本。
+Historical Identity：Stage 8 merge commit 为 `796db56`，不表示当前版本。
 
 # 4. Current Stage
 
 ## 已完成阶段
 
 ```text
-Stage 0 ～ Stage 8
+Stage 0 ～ Stage 9
 ```
 
-## Stage 8 状态
+## Stage 9 状态
 
-Stage 8 已完成、Final Review PASS、Real DeepSeek Smoke PASS、Full Regression PASS，并已合并至 `main`。
-
-最终能力包括：
-
-- `DeepSeekModelClient` 与 DeepSeek Responses API integration
-- Provider Adapter、`ModelRequest` / `ToolDefinition` mapping
-- FinalAnswer / Function Call mapping
-- ToolExecution history reconstruction，包含 success / failed Observation 与多个 sequential execution
-- `call_id` preservation 与 JSON serialization fail-fast
-- API key environment handling、stateless provider mapping 与 non-reasoning boundary
-- sequential tool-call defensive boundary
-- offline provider tests、offline Agent integration tests
-- real FinalAnswer smoke 与 real ToolCall → Observation → FinalAnswer smoke
+```text
+Implementation: COMPLETE
+Final Review: PASS
+MUST FIX: 0
+Real DeepSeek Agent Tool Loop: PASS
+Real Agent HTTP Smoke: PASS
+Post-merge main regression: PASS
+```
 
 ## Next Stage
 
 ```text
-Stage 9
+Stage 10
 ```
 
 Specific Goal：
@@ -114,7 +104,7 @@ Specific Goal：
 UNKNOWN
 ```
 
-Stage 9 具体目标必须在独立 Stage Planning 中确定；当前不提前设计。
+Stage 10 必须从 repository reality 开始正式 Planning；当前不猜测目标，也不开始实现。
 
 # 5. Implemented Backend Capabilities
 
@@ -128,17 +118,26 @@ GET  /api/health
 POST /api/crawl
 GET  /api/jobs
 GET  /api/jobs/{job_id}
+POST /api/agent/query
 ```
 
-服务支持健康与数据库检查、模拟岗位采集、岗位列表与详情查询、城市 / 公司 / 技能筛选、组合筛选与分页。岗位核心数据由 Pydantic 验证，数据库读取使用 `JobRead`，列表使用 `JobListResponse`；数据库内部 `identity_key` 不向 API 或 Agent Tool 暴露。
+`POST /api/agent/query` 表示每个 request 触发一次独立、无持久会话的 Agent run。公共 response 只包含：
+
+```text
+answer
+steps
+tool_execution_count
+```
+
+它不是 persistent chat，也不暴露内部 `ToolExecution` trace。
+
+岗位服务支持健康与数据库检查、模拟岗位采集、岗位列表与详情查询、城市 / 公司 / 技能筛选、组合筛选与分页。岗位核心数据由 Pydantic 验证，数据库读取使用 `JobRead`，列表使用 `JobListResponse`；数据库内部 `identity_key` 不向 API 或 Agent Tool 暴露。
 
 ## Crawling, cleaning and persistence
 
-`MockJobCrawler` 从 `app/fixtures/sample_jobs.html` 读取模拟招聘页面，解析岗位名称、公司、城市、薪资、描述、技能、链接与发布日期。清洗包含城市、公司、技能标准化，空白与重复技能处理，并保持原始技能顺序。
+`MockJobCrawler` 从 `app/fixtures/sample_jobs.html` 读取模拟招聘页面，解析并清洗岗位数据。`process_jobs` 执行 Cleaning → Deduplication。重复保护由输入列表业务去重、Repository 保存前检查和数据库 `identity_key` 唯一约束共同提供。
 
-`process_jobs` 执行 Cleaning → Deduplication。重复保护由输入列表业务去重、Repository 保存前检查和数据库 `identity_key` 唯一约束共同提供。当前使用 SQLAlchemy 2.x + SQLite；技能字段使用 JSON 存储。
-
-Repository 支持 `city`、`company`、`skill`、`page`、`page_size` 查询、total 统计、空结果、超页与极大合法页码保护。技能查询使用 SQLite `json_each`，避免 `SQL` 误匹配 `NoSQL`。
+当前使用 SQLAlchemy 2.x + SQLite；技能字段使用 JSON 存储。Repository 支持 `city`、`company`、`skill`、`page`、`page_size` 查询、total 统计、空结果、超页与极大合法页码保护。技能查询使用 SQLite `json_each`，避免 `SQL` 误匹配 `NoSQL`。
 
 ## Lifecycle and workflow
 
@@ -173,17 +172,13 @@ User Goal
 
 ## Contracts and state
 
-`app/agent/contracts.py` 定义 provider-neutral 的 `ToolDefinition`、`ToolCall`、`ToolResult`、`ToolExecution`、`ModelRequest`、`ToolCallResponse`、`FinalAnswerResponse` 与 `AgentResult`。`ToolExecution` 保证 call/result 的 `call_id` 与 tool name 一致；成功结果不含 error，失败结果必须含有效 error。
-
-`AgentState` 仅存在于单次 run，保存 user message、step count、tool executions 与 final answer。每次 `AgentOrchestrator.run()` 创建独立局部 state；它不持久化、不跨 run 共享，也不保存在 `self.state`。
+`app/agent/contracts.py` 定义 provider-neutral contracts。`AgentState` 仅存在于单次 run；每次 `AgentOrchestrator.run()` 创建独立局部 state，不持久化、不跨 run 共享。
 
 ## Tool system and database boundary
 
-`BaseTool` 统一处理 Tool Definition、参数验证、执行、异常转换与 `ToolResult` 生成。参数验证和 Tool 内部异常都会成为失败 Observation；Unknown Tool 也由 Orchestrator 转为 `ToolResult(success=False, error="Tool is not available.")`。
+`BaseTool` 统一处理 Tool Definition、参数验证、执行、异常转换与 `ToolResult` 生成。参数验证、Tool 内部异常与 Unknown Tool 都成为失败 Observation，模型仍可恢复并生成最终答案。
 
-`ToolRegistry` 保持注册顺序，拒绝重复名称。当前 Job Tools：`SearchJobsTool` 与 `GetJobDetailTool`。参数模型使用 `extra="forbid"`，避免拼写错误被静默忽略。
-
-Job Tool 仅依赖 `JobQueryPort`；`RepositoryJobQueryAdapter` 将 Repository 结果转换为 `JobRead`。Agent Tool 不直接依赖 Repository、SQLAlchemy Session 或 `JobModel`：
+`ToolRegistry` 保持注册顺序并拒绝重复名称。当前 Job Tools 为 `SearchJobsTool` 与 `GetJobDetailTool`。两者只依赖 `JobQueryPort`；`RepositoryJobQueryAdapter` 隔离 Repository 与 SQLAlchemy：
 
 ```text
 SearchJobsTool / GetJobDetailTool
@@ -197,17 +192,83 @@ RepositoryJobQueryAdapter
 
 ## Orchestration
 
-`AgentOrchestrator` 负责执行控制：规范化 user message、创建 state、在每次 `ModelClient.generate()` 前检查 `max_steps`、构建 `ModelRequest`、执行 Tool，并在 FinalAnswer 时产生 `AgentResult`。
+`AgentOrchestrator` 负责执行控制、step boundary、Tool 调用与最终 `AgentResult`。仅支持 Sequential Tool Calling；Parallel Tool Calling 未实现。
 
-仅支持 Sequential Tool Calling：
+# 7. Application Composition and HTTP Boundary
+
+FastAPI composition root：
 
 ```text
-Model → Tool A → Observation A → Model → Tool B → Observation B → Model → FinalAnswer
+app/api/dependencies.py
 ```
 
-Tool Failure 不等于 Agent Failure；失败 Observation 会返回给模型进行下一轮决策。Parallel Tool Calling 未实现。
+Production object graph：
 
-# 7. Real LLM Provider Layer
+```text
+request-scoped SQLAlchemy Session
+→ RepositoryJobQueryAdapter
+→ SearchJobsTool
+→ GetJobDetailTool
+→ ToolRegistry
+→ AgentOrchestrator
+```
+
+两个 Job Tools 共享同一个 request-scoped `RepositoryJobQueryAdapter`。Tool 注册顺序固定为：
+
+1. `SearchJobsTool`
+2. `GetJobDetailTool`
+
+Lifecycle：
+
+```text
+request-scoped:
+- Session
+- RepositoryJobQueryAdapter
+- Job Tools
+- ToolRegistry
+- AgentOrchestrator
+
+application-level lazy reuse:
+- DeepSeekModelClient
+```
+
+没有保留 `Session` 的对象被全局缓存。
+
+## Model client configuration
+
+Production FastAPI dependency 使用以下 server-side configuration：
+
+```text
+DEEPSEEK_API_KEY
+DEEPSEEK_MODEL
+```
+
+Provider construction 是 lazy 的。导入 `app.main` 不要求 DeepSeek configuration；没有 Provider configuration 时，non-agent endpoints 仍可使用。
+
+## HTTP error boundary
+
+当前第一版行为：
+
+```text
+invalid request
+→ HTTP 422
+
+missing DeepSeek configuration
+→ sanitized HTTP 503
+
+unexpected Agent / Model runtime error
+→ sanitized HTTP 500
+
+Agent max_steps exhaustion
+→ sanitized HTTP 500
+
+Tool failure followed by model recovery
+→ HTTP 200
+```
+
+当前没有引入 provider-neutral exception taxonomy。
+
+# 8. Real LLM Provider Layer
 
 文件：`app/agent/providers/deepseek_client.py`
 Class：`DeepSeekModelClient`
@@ -222,9 +283,9 @@ DeepSeekModelClient
 DeepSeek Responses API
 ```
 
-`DeepSeekModelClient` 负责 Internal Contract ↕ Provider Contract 的映射。Provider-specific code 不进入 `AgentOrchestrator`、`AgentState`、Tool System、Database 或 FastAPI。
+Provider-specific code 不进入 `AgentOrchestrator`、`AgentState`、Tool System、Database 或 FastAPI route。
 
-## DeepSeek configuration
+## DeepSeek configuration and state
 
 ```text
 Provider: DeepSeek
@@ -232,35 +293,14 @@ API: DeepSeek Responses API
 Base URL: https://api.deepseek.com
 SDK: OpenAI Python SDK
 API key env: DEEPSEEK_API_KEY
-Model name: constructor/config input
-Live Stage 8 verification model: deepseek-v4-flash
+Model env: DEEPSEEK_MODEL
 ```
 
-当前 LLM Provider 是 DeepSeek；OpenAI Python SDK 仅是其 OpenAI-compatible API 的兼容客户端，不是当前 Provider。
-
-## Provider state and reasoning boundary
-
-Stage 8 Provider Adapter 是 stateless。每次 `generate(ModelRequest)` 都根据当前 request 重建 Provider Input，且不使用：
-
-```text
-previous_response_id
-self.history
-self.last_response
-persistent provider conversation
-reasoning continuity
-```
-
-Stage 8 是 non-reasoning DeepSeek integration；每次请求显式使用：
-
-```text
-reasoning={"effort": "none"}
-```
-
-未来 reasoning support 需要单独的 Architecture Decision。
+`DeepSeekModelClient` 是 stateless。每次 `generate(ModelRequest)` 都根据当前 request 重建 Provider Input，不使用 provider conversation persistence 或 reasoning continuity。当前 integration 显式使用 `reasoning={"effort": "none"}`。
 
 ## Tool history mapping
 
-无 `ToolExecution` 时，直接发送 user message。存在 execution 时，按原始执行顺序重建：
+存在 execution 时，Adapter 按原始 sequential execution 顺序重建：
 
 ```text
 User Message
@@ -270,49 +310,61 @@ function_call
 function_call_output
 ```
 
-多个 Sequential `ToolExecution` 全部按该顺序重建。`function_call` 保留 `call_id`、name、arguments。successful observation 包含 `success`、`tool_name`、`data`；failed observation 包含 `success`、`tool_name`、`error`。
+`function_call` 保留 `call_id`、name、arguments；Observation 包含 success、tool name，以及 data 或 error。
 
-## Sequential and error boundary
+## Provider compatibility and defensive rules
 
-Sequential Tool Calling only：历史中的多个 sequential ToolExecution 受支持；单次 Provider Response 的多个 Function Calls 明确失败。DeepSeek 不能依赖 `parallel_tool_calls=False` 作为 sequential guarantee；Adapter 自身防御该边界。
+真实 DeepSeek 可能返回：
 
-以下 Provider 行为均 fail：
+```text
+phase="commentary" message
++
+single function_call
+```
+
+当前 mapping：
+
+```text
+commentary + function_call
+→ ToolCallResponse
+
+final_answer + function_call
+→ explicit failure
+
+unknown / missing / blank phase + function_call
+→ explicit failure
+
+multiple function calls
+→ explicit failure
+```
+
+以下行为同样明确失败：
 
 - invalid JSON arguments
 - non-object arguments
-- multiple function calls
-- mixed function call + final answer
+- function call 与不兼容的 final output 混合
 - empty / unsupported response
-- JSON serialization failure（在 provider request 前）
+- request-side JSON serialization failure
 
-Provider exception 继续传播。Stage 8 不实现 Retry。
+Provider exception 继续传播。当前不实现 Retry。自动化测试不调用真实 DeepSeek；真实 Provider verification 与 pytest 分离。
 
-## API key safety
-
-真实 key 仅来自 `DEEPSEEK_API_KEY`，不得 hardcode、commit、log、写入 tests 或本快照。Injected Fake Client 不要求 API key。自动化测试从不调用真实 Provider；live provider verification 与 pytest 分离。
-
-# 8. Current Architecture
+# 9. Current Architecture
 
 ```text
 HTTP Client → FastAPI
                  ├─ Health API → SELECT 1
                  ├─ Crawl API → ingest_jobs → MockCrawler → process_jobs
-                 └─ Jobs API → Repository → SQLAlchemy → SQLite
-
-User Goal → AgentOrchestrator → ModelClient → DeepSeekModelClient
-                                              ↓
-                                     DeepSeek Responses API
-                                              ↓
-                         ToolCallResponse / FinalAnswerResponse
-                                      ↓
-                               ToolRegistry → Tool → JobQueryPort
-                                                    ↑
-                                   RepositoryJobQueryAdapter → Repository
+                 ├─ Jobs API → Repository → SQLAlchemy → SQLite
+                 └─ Agent API → request-scoped AgentOrchestrator
+                                  ├─ lazy DeepSeekModelClient → DeepSeek Responses API
+                                  └─ ToolRegistry → Job Tools → JobQueryPort
+                                                                    ↑
+                                           RepositoryJobQueryAdapter → Repository
 ```
 
-# 9. Frozen Architecture Decisions
+# 10. Frozen Architecture Decisions
 
-Stage 7 decisions retained:
+Stage 7 decisions retained：
 
 - `AgentOrchestrator` remains provider-neutral.
 - `ModelClient` is the model boundary; `AgentState` is per-run.
@@ -320,62 +372,90 @@ Stage 7 decisions retained:
 - `JobQueryPort` and `RepositoryJobQueryAdapter` isolate Tools from database infrastructure.
 - Sequential Tool Calling only.
 
-Stage 8 decisions:
+Stage 8 decisions retained：
 
 - DeepSeek Provider is isolated behind `ModelClient`.
 - `DeepSeekModelClient` is stateless; no provider conversation persistence.
 - API key comes from `DEEPSEEK_API_KEY`.
 - OpenAI Python SDK is only the compatibility SDK.
-- Stage 8 compatibility uses `reasoning={"effort": "none"}`.
+- Current compatibility uses `reasoning={"effort": "none"}`.
 - No parallel tool execution; multiple provider function calls fail explicitly.
 - Automated tests never call the real provider; live verification is separate from pytest.
 
-# 10. Automated Testing and Review Status
+Stage 9 decisions：
 
-Current authoritative baseline:
+- `POST /api/agent/query` represents one stateless Agent run.
+- FastAPI-specific composition belongs in `app/api/dependencies.py`.
+- The Session-retaining Agent object graph is request-scoped.
+- Stateless `DeepSeekModelClient` may be lazily reused at application level.
+- The HTTP public contract does not expose internal `ToolExecution` trace.
+- The server controls Provider, model, `max_steps`, and tools.
+- Agent Runtime remains provider-neutral.
+- Automated tests do not call real DeepSeek.
+- Real Provider / HTTP smoke remains separate from pytest.
+
+# 11. Automated Testing, Review, and Real Verification
+
+Current authoritative baseline：
 
 ```text
-Provider targeted: 20 passed
-Agent subsystem: 90 passed
-Full project: 204 passed
-Warnings: 0
+Provider targeted:
+24 passed
 
-Post-merge main regression: 204 passed, 0 warnings
-Codex Final Review: MUST FIX = 0
-Final Verdict: READY FOR STAGE 8 CLOSEOUT
+Agent subsystem:
+94 passed
+
+Full project:
+219 passed
+
+Warnings:
+0
+
+Post-merge main regression:
+219 passed, 0 warnings
+
+Codex Final Review:
+MUST FIX = 0
+
+Final Verdict:
+READY FOR STAGE 9 CLOSEOUT
 ```
 
-Real DeepSeek Smoke A PASS：
+Stage 8 full baseline `204 passed, 0 warnings` and Stage 7 baseline `184 passed, 1 warning` are historical only.
+
+## Real DeepSeek Agent Tool Loop
 
 ```text
-Real DeepSeek → FinalAnswerResponse
-response_type: FinalAnswerResponse
-answer: smoke-ok
-```
+PASS
 
-Real DeepSeek Smoke B PASS：
-
-```text
-Real DeepSeek → ToolCall → AgentOrchestrator → Tool → ToolResult
-→ Observation → Real DeepSeek → FinalAnswerResponse → AgentResult
-
+Observed:
 steps: 2
 tool_execution_count: 1
-tool_name: get_smoke_code
-arguments: {"request": "stage8d2"}
-success: True
-data.code: DEEPSEEK_TOOL_SMOKE_OK
-error: None
+tool_name: search_jobs
+tool_success: True
+tool_error: None
 ```
 
-The former Stage 7 baseline (`184 passed, 1 warning`) is historical only. The former Starlette TestClient/httpx warning is no longer a current warning. Codex sandbox `tmp_path` / `.pytest_cache` PermissionError is environment-only historical debugging information, not a project warning or failure.
+## Real Agent HTTP Smoke
 
-# 11. Current Limitations
+```text
+PASS
+
+POST /api/agent/query
+
+Observed:
+non-empty answer
+steps: 2
+tool_execution_count: 1
+```
+
+真实验证不记录或暴露 API key 内容。
+
+# 12. Current Limitations
 
 - 当前招聘数据源仍是 Mock HTML
 - SQLite，不是生产数据库
 - 没有 Alembic Migration
-- Agent 没有 HTTP API
 - 没有 Retry
 - 没有 Memory
 - 没有 RAG
@@ -387,7 +467,7 @@ The former Stage 7 baseline (`184 passed, 1 warning`) is historical only. The fo
 - 没有 reasoning continuity
 - 没有 token/cost accounting
 
-# 12. Repository Tree
+# 13. Repository Tree
 
 以下为当前真实 tracked files：
 
@@ -416,8 +496,10 @@ app/
             registry.py
     api/
         __init__.py
+        dependencies.py
         routes/
             __init__.py
+            agent.py
             crawl.py
             health.py
             jobs.py
@@ -436,6 +518,7 @@ app/
     main.py
     schemas/
         __init__.py
+        agent.py
         crawl_response.py
         health_response.py
         job.py
@@ -460,8 +543,10 @@ docs/
         stage-06-review.md
         stage-07-review.md
         stage-08-review.md
+        stage-09-review.md
     tasks/
         stage-08-task.md
+        stage-09-task.md
 requirements.txt
 tests/
     agent/
@@ -482,6 +567,7 @@ tests/
         test_tool_registry.py
     database/
         test_job_query_adapter.py
+    test_agent_api.py
     test_cleaner.py
     test_crawl_api.py
     test_database.py
@@ -502,20 +588,16 @@ tests/
 
 `requirements.txt` includes the OpenAI Python SDK dependency. `.venv` and database temporary files are not tracked and are intentionally absent.
 
-# 13. Stage 8 Documentation
+# 14. Current Documentation and Development Workflow
 
-Current Stage 8 documentation:
+Current Stage documentation：
 
 ```text
-docs/tasks/stage-08-task.md
-docs/stage-reviews/stage-08-review.md
+docs/tasks/stage-09-task.md
+docs/stage-reviews/stage-09-review.md
 docs/codex-workflow.md
 docs/development-log.md
 ```
-
-Stage 8 review and log are complete.
-
-# 14. Development Workflow
 
 长期工作方式：
 
@@ -553,7 +635,8 @@ Chat history
 每个 Stage 的标准流：
 
 ```text
-feature branch
+formal Planning from repository reality
+→ feature branch
 → implementation
 → tests
 → Final Read-Only Review
@@ -565,3 +648,5 @@ feature branch
 → PROJECT_STATE
 → branch cleanup
 ```
+
+Next Stage 为 Stage 10，Specific Goal 为 `UNKNOWN`。必须先正式 Planning，不得从本快照推断或承诺未来功能。
