@@ -508,6 +508,64 @@ def test_positive_pages_with_zero_total_fails() -> None:
             client.search_positions(page_num=1, page_size=20)
 
 
+@pytest.mark.parametrize(
+    ("pages", "total", "position_count"),
+    [
+        (1, 21, 20),
+        (1, 1, 0),
+        (2, 41, 20),
+        (2, "40", 19),
+    ],
+)
+def test_impossible_discovery_capacity_fails(
+    pages: int,
+    total: int | str,
+    position_count: int,
+) -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"].update(
+        {
+            "pages": pages,
+            "total": total,
+            "list": [
+                {"positionId": f"position-{index}"}
+                for index in range(position_count)
+            ],
+        }
+    )
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        with pytest.raises(
+            ValueError,
+            match="discovery.*total.*capacity",
+        ):
+            client.search_positions(page_num=1, page_size=20)
+
+
+def test_non_full_discovery_page_with_sufficient_capacity_is_valid() -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"].update(
+        {
+            "pages": 2,
+            "total": 21,
+            "list": [{"positionId": "position-001"}],
+        }
+    )
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        page = client.search_positions(page_num=1, page_size=20)
+
+    assert page.pages == 2
+    assert page.total == 21
+    assert page.positions == (
+        OppoPositionSummary(position_id="position-001"),
+    )
+
+
 def test_discovery_list_longer_than_total_fails() -> None:
     envelope = valid_discovery_envelope()
     envelope["data"]["total"] = "1"

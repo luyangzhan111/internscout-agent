@@ -148,6 +148,17 @@ class OppoJobSourceClient:
                 "data.total is zero"
             )
 
+        if pages > 0:
+            maximum_representable_total = (
+                (pages - 1) * returned_page_size
+                + len(raw_positions)
+            )
+            if total > maximum_representable_total:
+                raise ValueError(
+                    "OPPO discovery data.total exceeds the representational "
+                    "capacity of data.pages, data.pageSize, and data.list"
+                )
+
         if returned_page_num != page_num:
             raise ValueError(
                 "OPPO discovery data.pageNum does not match the requested "
