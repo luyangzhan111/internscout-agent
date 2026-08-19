@@ -3734,3 +3734,701 @@ UNKNOWN
 ```
 
 必须等真实 PR merge 后确定。
+
+---
+
+## 阶段10：Real Recruitment Source Integration & Source Abstraction
+
+### 本阶段目标
+
+Stage 10 的核心目标是在不重新设计 Stage 3～9 的前提下，将第一个真实招聘数据源接入 InternScout Agent 现有 pipeline。
+
+最终目标链路：
+
+```text
+real OPPO Careers
+↓
+source validation
+↓
+OppoJobCrawler
+↓
+JobCreate
+↓
+existing cleaning / deduplication
+↓
+SQLite
+↓
+Jobs API
+↓
+Agent Tools
+↓
+DeepSeek Agent
+```
+
+Stage 10 starting point：
+
+```text
+Base:
+21d33b0
+docs: update project state after stage 9
+
+Feature Branch:
+feat/stage-10-oppo-source-integration
+```
+
+---
+
+### Source Selection
+
+Stage 10A 首先评估 ByteDance。
+
+实际观察：
+
+```text
+Detail:
+plain HTTP usable
+
+Discovery:
+depends on browser-side _signature / signing behavior
+```
+
+项目明确拒绝：
+
+```text
+signature reverse engineering
+anti-bot bypass
+browser automation as crawler architecture
+```
+
+因此 ByteDance 没有被选为第一个真实 source。
+
+随后评估 OPPO Careers。
+
+OPPO 静态 HTML 主要是 frontend shell，因此没有采用 HTML scraping。招聘网站实际使用的 JSON endpoints 可以通过普通 synchronous HTTP 访问，不需要：
+
+```text
+Cookie
+Authorization
+token
+signature
+browser automation
+```
+
+这些是从 OPPO recruitment site 观察到的网站内部 JSON endpoints，不是本项目声明的官方 public developer API。
+
+---
+
+### OPPO Source Boundary
+
+新增：
+
+```text
+app/crawlers/oppo_source_client.py
+```
+
+主要 symbols：
+
+```text
+OppoJobSourceClient
+OppoPositionSummary
+OppoPositionPage
+OppoPositionDetail
+```
+
+Source client 负责：
+
+```text
+HTTP request serialization
+HTTP / status handling
+JSON decoding
+source envelope validation
+pagination validation
+detail field validation
+```
+
+使用 injected caller-owned synchronous `httpx.Client`，Client lifecycle 由调用方管理。
+
+它不认识：
+
+```text
+JobCreate
+Cleaner
+Deduplicator
+Repository
+SQLite
+FastAPI
+Agent
+```
+
+Stage 10 没有实现 retry。
+
+Observed endpoints：
+
+```text
+Discovery:
+POST https://career.oppo.com/ats-candidate-api/open-api/position/queryPositionList
+
+Detail:
+GET https://career.oppo.com/ats-candidate-api/open-api/position/queryPosition
+```
+
+持久化使用 human OPPO recruitment URL：
+
+```text
+https://career.oppo.com/official/oppo/recruitment/post/{position_id}?recruitType={recruit_type}
+```
+
+不会把内部 JSON endpoint 保存为 `source_url`。
+
+---
+
+### OPPO Crawler Boundary
+
+新增：
+
+```text
+app/crawlers/oppo_crawler.py
+```
+
+主要 symbol：
+
+```text
+OppoJobCrawler
+```
+
+`OppoJobCrawler` 继承 `BaseJobCrawler`，负责：
+
+```text
+source-specific query policy
+finite pagination
+discovery ordering
+detail fetch ordering
+typed OPPO data → JobCreate mapping
+```
+
+默认 source policy：
+
+```text
+recruit_types = ("OFFEN-RECRUITMENT",)
+keyword = ""
+page_size = 20
+```
+
+没有默认 `AI` keyword。真实 smoke 使用的窄 AI filter 不会变成 production default。
+
+Pagination flow：
+
+```text
+page 1 discovery
+↓
+page 1 establishes finite pages bound
+↓
+remaining discovery pages
+↓
+all discovery complete
+↓
+sequential detail calls
+↓
+JobCreate mapping in discovery order
+```
+
+Crawler fail-fast，不返回 partial results，也不包含 HTTP implementation details。
+
+---
+
+### Job Mapping
+
+OPPO 到 `JobCreate` 的 mapping：
+
+```text
+publishName
+→ title
+
+"OPPO"
+→ company
+
+workCityName
+→ city
+
+None
+→ salary
+
+jobDuty + workRequire
+→ description
+
+[]
+→ skills
+
+"oppo"
+→ source
+
+human OPPO recruitment URL
+→ source_url
+
+publishDate
+→ published_at
+```
+
+`OppoJobCrawler` 保留 source 原值：
+
+```text
+东莞市
+```
+
+existing Cleaner 再统一处理：
+
+```text
+东莞市
+↓
+东莞
+```
+
+因此 source mapping 与 project-wide domain cleaning 继续保持独立职责。
+
+---
+
+### Live Source Compatibility Debugging
+
+真实 OPPO smoke 发现 offline fixture 最初没有表达的两种 serialization。
+
+#### 1. Success Code
+
+Live OPPO 返回：
+
+```text
+code = "0"
+```
+
+Client 最终且只接受：
+
+```text
+0
+"0"
+```
+
+bool 与其他 malformed representation 继续拒绝。
+
+#### 2. Discovery Total
+
+Live discovery 返回：
+
+```text
+total = "1"
+```
+
+Client 接受：
+
+```text
+non-negative int
+or
+canonical non-negative ASCII decimal string
+```
+
+String total 在 source boundary 内 normalize 为 `int`。
+
+以下 metadata 继续 strict int-only：
+
+```text
+pageNum
+pageSize
+pages
+```
+
+本次 debugging 的核心原则：
+
+```text
+Source Reality > Fixture Assumptions
+```
+
+Compatibility 只根据真实观察到的 source evidence 窄范围扩展，没有使用 `int(value)` 等 broad coercion 接受未知 representation。
+
+---
+
+### Final Review Pagination Fix
+
+Stage 10 Final Review #1：
+
+```text
+MUST FIX = 1
+```
+
+发现 pagination metadata 可能保证 silent incomplete ingestion。
+
+例子：
+
+```text
+pages = 1
+pageSize = 20
+total = 21
+len(list) = 20
+```
+
+或：
+
+```text
+pages = 1
+pageSize = 20
+total = 1
+len(list) = 0
+```
+
+在这两种情况中，crawler 的有限 page bound 已经没有任何 later page 可以取回 source 声称存在的剩余岗位。
+
+最终加入 narrow per-response invariant：
+
+```text
+maximum_representable_total =
+    (pages - 1) * returned_page_size
+    + len(raw_positions)
+```
+
+仅在以下条件成立时拒绝：
+
+```text
+total > maximum_representable_total
+```
+
+没有增加：
+
+```text
+cross-page total equality
+cross-page pages equality
+crawler accumulated count
+cross-page source state
+```
+
+因此该修复是 response self-consistency boundary，不要求每一页填满，也不要求 `total == maximum capacity`。
+
+Fix commit：
+
+```text
+bff25e4
+fix: reject incomplete oppo pagination metadata
+```
+
+随后执行 Final Review #2：
+
+```text
+MUST FIX = 0
+SHOULD FIX = 0
+
+READY FOR STAGE 10 CLOSEOUT
+```
+
+这次历史说明：green test suite 仍可能遗漏 data-integrity invariant，Final Review 可以发现并转化为 regression protection。
+
+---
+
+### Network-Free Ingestion Integration
+
+新增：
+
+```text
+tests/test_oppo_ingestion.py
+```
+
+验证路径：
+
+```text
+Fake typed OPPO source
+↓
+OppoJobCrawler
+↓
+real ingest_jobs
+↓
+real process_jobs
+↓
+Cleaner
+↓
+Deduplicator
+↓
+Repository
+↓
+isolated temporary SQLite
+```
+
+验证 persisted fields：
+
+```text
+title = AI产品实习生
+company = OPPO
+raw city = 东莞市
+persisted city = 东莞
+salary = None
+skills = []
+source = oppo
+published_at = 2026-06-01
+source_url = canonical human OPPO URL
+```
+
+重复 ingestion 返回同一个 logical database record，证明当前 identity rule 下保持 idempotent。
+
+---
+
+### Automated Tests
+
+Stage 10 automated tests 全部 network-free。
+
+```text
+tests/test_oppo_source_client.py
+httpx.MockTransport
+117 passed
+
+tests/test_oppo_crawler.py
+fake typed source client
+13 passed
+
+tests/test_oppo_ingestion.py
+isolated temporary SQLite
+1 passed
+```
+
+Final baseline：
+
+```text
+Combined OPPO:
+131 passed
+
+Full project:
+350 passed
+
+Warnings:
+0
+
+git diff --check:
+PASS
+```
+
+Real OPPO 与 DeepSeek verification 继续和 deterministic pytest 分离。
+
+---
+
+### Real Stage 10G End-to-End Verification
+
+Explicit real-source smoke 使用实际 position：
+
+```text
+position_id:
+2061649545671430146
+
+title:
+AI产品实习生
+
+raw city:
+东莞市
+
+publish_date:
+2026-06-01
+
+recruit_type:
+OFFEN-RECRUITMENT
+```
+
+真实 ingestion：
+
+```text
+OPPO
+↓
+OppoJobSourceClient
+↓
+OppoJobCrawler
+↓
+ingest_jobs
+↓
+Repository
+↓
+isolated SQLite
+```
+
+最终 persisted city：
+
+```text
+东莞
+```
+
+Normal development database 没有被使用。
+
+Jobs API：
+
+```text
+GET /api/jobs
+→ 200
+
+GET /api/jobs/1
+→ 200
+```
+
+Real Agent：
+
+```text
+Provider:
+DeepSeek
+
+Model:
+deepseek-v4-flash
+
+POST /api/agent/query:
+200
+
+steps:
+2
+
+tool_execution_count:
+1
+
+tool:
+search_jobs executed successfully
+```
+
+Agent final answer 消费了真实 persisted OPPO job。
+
+`DEEPSEEK_API_KEY` 只通过 environment configuration 提供，从未提交，也不记录具体 value。
+
+---
+
+### Same-Database Evidence
+
+Real Stage 10G 验证将：
+
+```text
+real ingestion
+Jobs API
+Agent Tools
+```
+
+连接到同一个 isolated SQLite engine / session factory。
+
+```text
+one temporary SQLite
+↓
+ingestion session
++
+FastAPI app.state.database_engine
++
+get_session dependency override
+↓
+Jobs API and Agent Tools
+```
+
+这避免了 ingestion 写入 database A，而 API / Agent 意外读取 database B 所造成的 false end-to-end smoke。
+
+---
+
+### Frozen Boundaries
+
+Stage 10 没有重新设计或修改：
+
+```text
+BaseJobCrawler
+JobCrawlerProtocol
+JobCreate
+process_jobs
+Cleaner
+Deduplicator
+ingest_jobs
+Repository
+database schema
+/api/crawl
+Jobs API
+Agent Runtime
+Agent Tools
+requirements.txt
+```
+
+`/api/crawl` 继续保持 mock-specific。
+
+Real OPPO 初始 ingestion 使用 explicit composition，不在本阶段新增 production real-source trigger。
+
+---
+
+### Stage 10 Implementation Commits
+
+```text
+7abd814 docs: add stage 10 task specification
+
+4722eee feat: add oppo source client boundary
+
+534cbec feat: add oppo job crawler
+
+1f8cfdd test: add oppo ingestion integration
+
+bf6f347 fix: support oppo string total count
+
+bff25e4 fix: reject incomplete oppo pagination metadata
+```
+
+以上只记录当前已经存在的 implementation commits，没有预先发明 documentation commit、PR number 或 merge SHA。
+
+---
+
+### Known Limitations
+
+现有 identity 继续使用：
+
+```text
+normalized company
++
+normalized title
++
+normalized city
+```
+
+因此不同 OPPO `positionId` 如果拥有相同 normalized identity，可能 collapse 为一个 logical database job。
+
+Stage 10 没有重新设计 database identity。
+
+其他已知 limitation：
+
+```text
+external OPPO schema may change
+no retry
+no partial success
+no scheduler
+no production real-source trigger
+no multi-source orchestration
+```
+
+这些是明确 scope boundary，不是 Stage 10 regressions。
+
+---
+
+### 本阶段学到的知识
+
+- External website response format 应被限制在 Source Adapter 内
+- Injected HTTP Client 可以同时明确 resource lifecycle 与 test seam
+- Source Reality 应优先于 offline fixture assumption
+- External compatibility 应根据 evidence 窄范围扩展，而不是 broad coercion
+- Python `bool` 是 `int` subclass，external numeric validation 需要显式处理
+- Pagination correctness 不只是避免 infinite loop，也要避免 silent truncation
+- Fail-fast 比看似成功但丢失岗位更安全
+- Source mapping 与 domain cleaning 应保持独立职责
+- MockTransport 与 real source smoke 解决不同的验证问题
+- End-to-end smoke 必须确认 ingestion、API 与 Agent 查询同一个 database
+- 新 source 可以通过既有 contract 接入，不需要让 Repository、API 或 Agent 理解 OPPO schema
+- Green tests 之外仍需要 architecture-level Final Review
+
+---
+
+### 当前 Stage 10 状态
+
+```text
+Implementation / verification:
+COMPLETE
+
+Final Review:
+PASS
+
+Documentation:
+IN PROGRESS
+
+PR / merge:
+PENDING
+
+PROJECT_STATE:
+PENDING POST-MERGE UPDATE
+
+Stage 10 Merge Identity:
+UNKNOWN
+```
+
+Stage 10 尚未 merge 到 `main`。Merge identity 与 `PROJECT_STATE.md` final snapshot 必须在真实 PR merge 和 post-merge main verification 后确认。
