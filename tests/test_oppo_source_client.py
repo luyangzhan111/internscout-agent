@@ -163,13 +163,37 @@ def test_search_serializes_empty_optional_filters_without_source_policy() -> Non
     ]
 
 
-def test_search_accepts_observed_empty_result_shape() -> None:
+@pytest.mark.parametrize("total_value", [1, "1"])
+def test_search_accepts_integer_and_canonical_string_total(
+    total_value: int | str,
+) -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"].update(
+        {
+            "total": total_value,
+            "list": [{"positionId": "position-001"}],
+        }
+    )
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        page = client.search_positions(page_num=1, page_size=20)
+
+    assert page.total == 1
+    assert type(page.total) is int
+
+
+@pytest.mark.parametrize("total_value", [0, "0"])
+def test_search_accepts_observed_empty_result_shape(
+    total_value: int | str,
+) -> None:
     envelope = valid_discovery_envelope()
     envelope["data"] = {
         "pageNum": 1,
         "pageSize": 20,
         "pages": 0,
-        "total": 0,
+        "total": total_value,
         "list": [],
     }
 
@@ -185,6 +209,7 @@ def test_search_accepts_observed_empty_result_shape() -> None:
         total=0,
         positions=(),
     )
+    assert type(page.total) is int
 
 
 def test_detail_gets_expected_query_and_returns_typed_detail() -> None:
@@ -359,8 +384,7 @@ def test_malformed_code_fails(
         ("pageSize", "20"),
         ("pages", -1),
         ("pages", True),
-        ("total", -1),
-        ("total", False),
+        ("pages", "1"),
     ],
 )
 def test_invalid_discovery_integer_metadata_fails(
@@ -374,6 +398,60 @@ def test_invalid_discovery_integer_metadata_fails(
         lambda request: httpx.Response(200, json=envelope)
     ) as client:
         with pytest.raises(ValueError, match=f"discovery.*{field}"):
+            client.search_positions(page_num=1, page_size=20)
+
+
+@pytest.mark.parametrize(
+    "invalid_total",
+    [
+        "",
+        " ",
+        " 1",
+        "1 ",
+        "+1",
+        "-1",
+        "1.0",
+        "01",
+        "00",
+        "1e3",
+        "zero",
+        "１２",
+    ],
+)
+def test_malformed_string_total_fails(invalid_total: str) -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"]["total"] = invalid_total
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        with pytest.raises(ValueError, match="discovery.*total"):
+            client.search_positions(page_num=1, page_size=20)
+
+
+@pytest.mark.parametrize(
+    "invalid_total",
+    [False, True, None, 1.0, [], {}],
+)
+def test_malformed_non_integer_total_fails(invalid_total: Any) -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"]["total"] = invalid_total
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        with pytest.raises(ValueError, match="discovery.*total"):
+            client.search_positions(page_num=1, page_size=20)
+
+
+def test_negative_integer_total_fails() -> None:
+    envelope = valid_discovery_envelope()
+    envelope["data"]["total"] = -1
+
+    with source_client(
+        lambda request: httpx.Response(200, json=envelope)
+    ) as client:
+        with pytest.raises(ValueError, match="discovery.*total"):
             client.search_positions(page_num=1, page_size=20)
 
 
@@ -420,7 +498,7 @@ def test_contradictory_discovery_pagination_fails(
 def test_positive_pages_with_zero_total_fails() -> None:
     envelope = valid_discovery_envelope()
     envelope["data"].update(
-        {"pages": 1, "total": 0, "list": []}
+        {"pages": 1, "total": "0", "list": []}
     )
 
     with source_client(
@@ -432,7 +510,7 @@ def test_positive_pages_with_zero_total_fails() -> None:
 
 def test_discovery_list_longer_than_total_fails() -> None:
     envelope = valid_discovery_envelope()
-    envelope["data"]["total"] = 1
+    envelope["data"]["total"] = "1"
 
     with source_client(
         lambda request: httpx.Response(200, json=envelope)

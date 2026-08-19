@@ -127,10 +127,9 @@ class OppoJobSourceClient:
             minimum=0,
             operation="discovery",
         )
-        total = self._required_integer(
+        total = self._required_non_negative_count(
             data,
             "total",
-            minimum=0,
             operation="discovery",
         )
         raw_positions = data.get("list", _MISSING)
@@ -388,6 +387,45 @@ class OppoJobSourceClient:
             )
 
         return value
+
+    @staticmethod
+    def _required_non_negative_count(
+        data: Mapping[str, Any],
+        field: str,
+        *,
+        operation: str,
+    ) -> int:
+        """Read an integer count or its canonical ASCII decimal string."""
+
+        value = data.get(field, _MISSING)
+
+        if isinstance(value, bool):
+            raise ValueError(
+                f"OPPO {operation} data.{field} must be a non-negative "
+                "integer or canonical decimal string"
+            )
+
+        if isinstance(value, int):
+            if value < 0:
+                raise ValueError(
+                    f"OPPO {operation} data.{field} must be at least 0"
+                )
+
+            return value
+
+        if isinstance(value, str):
+            is_canonical_decimal = value == "0" or (
+                bool(value)
+                and value[0] in "123456789"
+                and all(character in "0123456789" for character in value[1:])
+            )
+            if is_canonical_decimal:
+                return int(value)
+
+        raise ValueError(
+            f"OPPO {operation} data.{field} must be a non-negative "
+            "integer or canonical decimal string"
+        )
 
     @staticmethod
     def _validate_positive_request_integer(
