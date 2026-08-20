@@ -17,6 +17,8 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - provider-neutral Agent Contract、Tool System、Tool-Calling Agent Runtime 与 AgentOrchestrator
 - Tool / Repository 的 Port / Adapter 解耦
 - DeepSeek 真实 LLM Provider Adapter 与真实 Provider / Agent 验证
+- CandidateProfile、JobSkillExtractor、CandidateMatcher 与 JobMatchingService
+- MatchJobsTool 与 deterministic and explainable job matching
 - 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
 
 项目当前不声称具备 multi-source orchestration、production scheduler、real-source HTTP trigger 或 distributed crawling。
@@ -39,35 +41,35 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 
 # 3. Current Version Identity
 
-## Stage 10 Merge Identity
+## Stage 11 Merge Identity
 
-Short: 9c8b2ba
+Short: e3b9b6c
 
-Full: 9c8b2bac6bdcb417e62ef0051d8c6a43ee38da5c
+Full: e3b9b6c0f33bd785103466c025b2b8072097eec5
 
-Corresponding merge: Merge pull request #10 from luyangzhan111/feat/stage-10-oppo-source-integration
+Corresponding merge: Merge pull request #11 from luyangzhan111/feat/stage-11-candidate-job-matching
 
-Merge commit message: Stage 10: integrate OPPO real recruitment source
+Merge commit message: feat: complete Stage 11 deterministic candidate job matching
 
 ## Snapshot Basis
 
 Branch: main
 
-Stage 10 merge commit: 9c8b2ba
+Stage 11 merge commit: e3b9b6c
 
 Working tree before PROJECT_STATE update: clean
 
-Post-merge full regression: 350 passed, 0 warnings
+Post-merge full regression: 503 passed, 0 warnings
 
-Targeted OPPO regression: 131 passed
+The later PROJECT_STATE documentation commit does not replace the Stage 11 feature merge identity. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
 
-The later PROJECT_STATE documentation commit does not replace the Stage 10 feature merge identity. Stage 9 merge identity 30062fc is historical, not current. Stage 8 identity 796db56 is historical.
+Stage 10 historical regression facts remain: combined OPPO regression 131 passed；post-merge main regression 350 passed, 0 warnings。
 
 # 4. Current Stage
 
 ## 已完成阶段
 
-Stage 0 ～ Stage 10
+Stage 0 ～ Stage 11
 
 ## Stage 10 状态
 
@@ -82,15 +84,49 @@ MUST FIX: 0
 SHOULD FIX: 0
 Post-merge main regression: PASS
 
+## Stage 11 状态
+
+Implementation: COMPLETE
+Deterministic Candidate / Job Matching: PASS
+Agent MatchJobsTool Integration: PASS
+Real Stage 11G Verification: PASS
+Final Review: PASS
+Post-merge main regression: PASS
+MUST FIX: 0
+SHOULD FIX: 0
+
+Regression:
+503 passed, 0 warnings
+
 ## Next Stage
 
-Stage 11
+Stage 12
 
 Specific Goal: UNKNOWN
 
-Stage 11 必须从 repository reality 开始正式 Planning；本快照不猜测 Stage 11 roadmap，也不开始 Stage 11 规划。
+Stage 12 必须从 repository reality 开始正式 Planning；本快照不猜测 Stage 12 roadmap，也不开始 Stage 12 规划。
 
 # 5. Implemented Backend Capabilities
+
+## Stage 11 candidate / job matching
+
+Stage 11 matching components：CandidateProfile、JobSkillExtractor、CandidateMatcher、JobMatchingService、MatchJobsTool。
+
+组件职责与边界：
+
+- CandidateProfile：验证并确定性规范化 request-scoped candidate skills 与 preferred cities。
+- JobSkillExtractor：从岗位 structured skills、title 与 description 中提取确定性技能证据。
+- CandidateMatcher：纯确定性计算 matched skills、missing skills、match score 与 reason。
+- JobMatchingService：通过 JobQueryPort 获取候选岗位，执行 city eligibility、matching、stable ranking 与 top_k 截断。
+- MatchJobsTool：作为只读 Agent Tool 验证输入并委托 JobMatchingService，不在 Tool 或 LLM 中复制 scoring 与 ranking logic。
+
+当前能力：
+
+- deterministic skill extraction
+- explainable matching score
+- matched/missing skill analysis
+- city filtering
+- deterministic ranking
 
 ## FastAPI and job data
 
@@ -120,7 +156,15 @@ Source Client 负责 HTTP、timeout、status handling、JSON envelope validation
 
 # 6. Agent Layer
 
-Agent Layer 位于 app/agent/，提供 provider-neutral Tool-Calling Runtime。AgentState 仅存在于单次 run；BaseTool、ToolRegistry、JobQueryPort 与 RepositoryJobQueryAdapter 保持既有边界。当前 Job Tools 为 SearchJobsTool 与 GetJobDetailTool，仅支持 Sequential Tool Calling。
+Agent Layer 位于 app/agent/，提供 provider-neutral Tool-Calling Runtime。AgentState 仅存在于单次 run；BaseTool、ToolRegistry、JobQueryPort 与 RepositoryJobQueryAdapter 保持既有边界。
+
+当前 Job Tools：
+
+- SearchJobsTool
+- GetJobDetailTool
+- MatchJobsTool
+
+当前仅支持 Sequential Tool Calling。
 
 # 7. Application Composition and HTTP Boundary
 
@@ -137,6 +181,22 @@ Mock route path：POST /api/crawl → MockJobCrawler → ingest_jobs。
 Real-source integration path：explicit composition → httpx.Client → OppoJobSourceClient → OppoJobCrawler → ingest_jobs。
 
 Shared downstream：Repository → SQLite → Jobs API / Agent Tools。
+
+Stage 11 matching path：
+
+CandidateProfile
+↓
+JobMatchingService
+↓
+JobQueryPort
+↓
+Repository
+↓
+MatchJobsTool
+↓
+AgentOrchestrator
+↓
+DeepSeek explanation
 
 真实 OPPO 已集成，但 /api/crawl 仍为 mock-specific；既有 HTTP / Agent paths 保持不变。
 
@@ -181,12 +241,18 @@ source_url 存储 human recruitment page。
 
 Current authoritative baseline：
 
+- Full project: 503 passed, 0 warnings
+- Post-merge main regression: 503 passed, 0 warnings
+- Final Stage 11 Review: PASS；MUST FIX = 0；SHOULD FIX = 0
+- Real Stage 11G Verification: PASS
+
+Stage 10 historical baseline：
+
 - Source client: 117 passed
 - Crawler: 13 passed
 - Ingestion: 1 passed
 - Combined Stage 10 OPPO: 131 passed
-- Full project: 350 passed
-- Warnings: 0
+- Full project: 350 passed, 0 warnings
 - Post-merge main regression: 350 passed, 0 warnings
 - Final Stage 10 Review: MUST FIX = 0；SHOULD FIX = 0
 
@@ -233,6 +299,7 @@ app/agent/tools/__init__.py
 app/agent/tools/base.py
 app/agent/tools/job_query.py
 app/agent/tools/job_tools.py
+app/agent/tools/matching_tool.py
 app/agent/tools/registry.py
 app/api/__init__.py
 app/api/dependencies.py
@@ -253,6 +320,11 @@ app/database/repository.py
 app/database/session.py
 app/fixtures/sample_jobs.html
 app/main.py
+app/matching/__init__.py
+app/matching/contracts.py
+app/matching/matcher.py
+app/matching/service.py
+app/matching/skill_extractor.py
 app/schemas/__init__.py
 app/schemas/agent.py
 app/schemas/crawl_response.py
@@ -263,14 +335,16 @@ app/services/__init__.py
 app/services/cleaner.py
 app/services/deduplicator.py
 app/services/processor.py
+app/services/skill_vocabulary.py
 app/workflows/__init__.py
 app/workflows/job_ingestion.py
 docs/codex-workflow.md
 docs/development-log.md
-docs/stage-reviews/stage-01-review.md through stage-10-review.md
+docs/stage-reviews/stage-01-review.md through stage-11-review.md
 docs/tasks/stage-08-task.md
 docs/tasks/stage-09-task.md
 docs/tasks/stage-10-task.md
+docs/tasks/stage-11-task.md
 requirements.txt
 tests/agent/__init__.py
 tests/agent/fakes/__init__.py
@@ -281,11 +355,17 @@ tests/agent/test_agent_exceptions.py
 tests/agent/test_base_tool.py
 tests/agent/test_contracts.py
 tests/agent/test_job_tools.py
+tests/agent/test_matching_tool.py
 tests/agent/test_model_client.py
 tests/agent/test_orchestrator.py
 tests/agent/test_state.py
 tests/agent/test_tool_registry.py
 tests/database/test_job_query_adapter.py
+tests/matching/__init__.py
+tests/matching/test_contracts.py
+tests/matching/test_matcher.py
+tests/matching/test_service.py
+tests/matching/test_skill_extractor.py
 tests/test_agent_api.py
 tests/test_cleaner.py
 tests/test_crawl_api.py
@@ -311,7 +391,7 @@ tests/test_stage6_api_flow.py
 
 # 15. Current Documentation and Development Workflow
 
-Current Stage documentation：docs/tasks/stage-10-task.md、docs/stage-reviews/stage-10-review.md、docs/development-log.md、docs/codex-workflow.md。
+Current Stage documentation：docs/tasks/stage-11-task.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
 
 长期工作方式：Architecture-First + Codex-Driven Implementation + Human Verification。
 
@@ -321,4 +401,4 @@ Codex Git restrictions remain unchanged：默认禁止 git add、git commit、gi
 
 标准流：formal Planning from repository reality → feature branch → implementation → tests → Final Read-Only Review → Stage Review → Development Log → PR → merge → main regression → PROJECT_STATE → branch cleanup。
 
-Next Stage 为 Stage 11，Specific Goal 为 UNKNOWN；必须先正式 Planning，不得从本快照推断或承诺未来功能。
+Next Stage 为 Stage 12，Specific Goal 为 UNKNOWN；必须先正式 Planning，不得从本快照推断或承诺未来功能。
