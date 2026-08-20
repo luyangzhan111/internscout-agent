@@ -1,5 +1,6 @@
 """Offline HTTP integration tests for the Stage 9 agent endpoint."""
 
+import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -262,6 +263,83 @@ def test_agent_query_gets_job_detail_through_real_database_path(
     assert execution.result.success is True
     assert execution.result.data["id"] == job_ids[0]
     assert execution.result.data["title"] == "Agent开发实习生"
+
+
+def test_agent_query_matches_jobs_through_production_composition(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, session_factory = agent_api_client
+    seed_jobs(
+        session_factory,
+        create_job(
+            skills=["python", "fastapi"],
+            source_url="https://example.com/stage11f/1",
+        ),
+        create_job(
+            title="数据分析实习生",
+            city="上海市",
+            skills=["python", "sql"],
+            source_url="https://example.com/stage11f/2",
+        ),
+    )
+    fake_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="match_001",
+                tool_name="match_jobs",
+                arguments={
+                    "skills": ["Python"],
+                    "preferred_cities": ["深圳"],
+                    "top_k": 2,
+                },
+            ),
+            FinalAnswerResponse(answer="已找到匹配岗位。"),
+        ]
+    )
+
+    with override_model_client(fake_model):
+        response = client.post(
+            "/api/agent/query",
+            json={"user_message": "匹配深圳的 Python 岗位"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "已找到匹配岗位。",
+        "steps": 2,
+        "tool_execution_count": 1,
+    }
+    assert len(fake_model.requests) == 2
+
+    definitions = fake_model.requests[0].tools
+    assert [definition.name for definition in definitions] == [
+        "search_jobs",
+        "get_job_detail",
+        "match_jobs",
+    ]
+    match_definition = definitions[2]
+    assert match_definition.parameters["required"] == ["skills"]
+    assert set(match_definition.parameters["properties"]) == {
+        "skills",
+        "preferred_cities",
+        "top_k",
+    }
+
+    executions = fake_model.requests[1].tool_executions
+    assert len(executions) == 1
+    execution = executions[0]
+    assert execution.call.call_id == "match_001"
+    assert execution.call.tool_name == "match_jobs"
+    assert execution.result.success is True
+    assert execution.result.error is None
+    assert execution.result.tool_name == "match_jobs"
+    assert len(execution.result.data) == 1
+    assert execution.result.data[0]["job"]["title"] == (
+        "Python后端实习生"
+    )
+    assert execution.result.data[0]["job"]["city"] == "深圳"
+    assert execution.result.data[0]["matched_skills"] == ["Python"]
+    json.dumps(execution.result.data, ensure_ascii=False)
 
 
 def test_agent_query_recovers_from_real_tool_validation_failure(
