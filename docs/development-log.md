@@ -4432,3 +4432,723 @@ UNKNOWN
 ```
 
 Stage 10 尚未 merge 到 `main`。Merge identity 与 `PROJECT_STATE.md` final snapshot 必须在真实 PR merge 和 post-merge main verification 后确认。
+
+---
+
+## 阶段11：Deterministic Candidate / Job Matching & Agent Intelligence
+
+### 阶段目标
+
+Stage 11 的目标是在现有 persisted jobs、JobQueryPort、Agent Runtime 与 DeepSeek Provider 之上，加入确定性候选人 / 岗位匹配能力。
+
+目标链路：
+
+~~~text
+CandidateProfile
+↓
+persisted JobRead
+↓
+deterministic skill evidence
+↓
+CandidateMatcher
+↓
+stable ranked JobMatchResult
+↓
+match_jobs
+↓
+DeepSeek explanation
+~~~
+
+职责边界：
+
+~~~text
+LLM:
+intent + tool selection + explanation
+
+Application code:
+evidence + score + ranking + reason
+~~~
+
+Stage 11 starting point：
+
+~~~text
+Base:
+30f3d97
+docs: update project state after stage 10
+
+Feature Branch:
+feat/stage-11-candidate-job-matching
+
+Implementation HEAD:
+d21271a
+feat: integrate matching tool into agent runtime
+~~~
+
+---
+
+### 架构设计
+
+Matching application path：
+
+~~~text
+CandidateProfile
+        |
+        v
+JobMatchingService
+        |
+        +-----------------------------+
+        |                             |
+        v                             v
+JobQueryPort                  JobSkillExtractor
+        |                             |
+        v                             v
+RepositoryJobQueryAdapter     JobSkillEvidence
+        |                             |
+        v                             v
+Repository                    CandidateMatcher
+        |                             |
+        v                             v
+SQLite                        JobMatchResult
+~~~
+
+Agent path：
+
+~~~text
+POST /api/agent/query
+↓
+AgentOrchestrator
+↓
+DeepSeek
+↓
+match_jobs
+↓
+JobMatchingService
+↓
+deterministic result
+↓
+DeepSeek final answer
+~~~
+
+Matching service 只依赖 JobQueryPort，不认识 SQLAlchemy Session；Tool 只委托 application service，不包含 query、extractor、score 或 ranking logic。
+
+Candidate、evidence 与 match result 都是 request-scoped，按当前岗位即时计算，不持久化。
+
+---
+
+### Contracts
+
+新增：
+
+~~~text
+app/matching/contracts.py
+~~~
+
+主要 contracts：
+
+~~~text
+CandidateProfile
+JobSkillEvidence
+JobMatchResult
+MatchReason
+~~~
+
+CandidateProfile：
+
+~~~text
+skills:
+required non-empty list[StrictStr]
+
+preferred_cities:
+default []
+
+extra:
+forbid
+~~~
+
+技能与城市都会：
+
+~~~text
+normalize
+case-insensitive identity deduplicate
+preserve first occurrence order
+~~~
+
+blank 或 non-string element 被拒绝。城市复用现有 city normalization，例如：
+
+~~~text
+东莞市
+→
+东莞
+~~~
+
+JobSkillEvidence 允许空技能 evidence。
+
+JobMatchResult 包含：
+
+~~~text
+job
+match_score
+matched_skills
+missing_skills
+detected_job_skills
+reason
+~~~
+
+match_score 为 0..100 的 strict integer。matched / missing 必须无交集，且必须恰好 partition detected_job_skills。
+
+Reason：
+
+~~~text
+full_match
+partial_match
+no_skill_match
+insufficient_evidence
+~~~
+
+---
+
+### Skill Vocabulary
+
+新增：
+
+~~~text
+app/services/skill_vocabulary.py
+~~~
+
+Cleaner、matching contracts 与 extractor 共享同一个 canonical skill boundary。
+
+当前 canonical display values：
+
+~~~text
+Python
+FastAPI
+SQL
+Git
+pytest
+HTTP
+HTML
+Requests
+Beautiful Soup
+Docker
+Linux
+Shell
+Postman
+LLM
+RAG
+~~~
+
+Beautiful Soup aliases：
+
+~~~text
+beautifulsoup
+beautiful soup
+beautifulsoup4
+bs4
+~~~
+
+normalize_skill 清理 whitespace，使用 casefold alias identity；normalize_skills 在保持首次出现顺序的情况下去重。
+
+未知 structured skill 保留清理后的 display value。Stage 11 没有构建完整技能 taxonomy、ontology 或 knowledge graph。
+
+---
+
+### Extractor
+
+新增：
+
+~~~text
+app/matching/skill_extractor.py
+~~~
+
+JobSkillExtractor 按固定顺序合并：
+
+~~~text
+job.skills
+↓
+job.title
+↓
+job.description
+~~~
+
+Free-text extraction：
+
+~~~text
+explicit lexical whitelist
+escaped regex
+ASCII identifier boundaries
+case-insensitive matching
+canonical output
+first textual occurrence
+duplicate removal
+~~~
+
+测试冻结了 NoSQL、SQLAlchemy、github、digital、HTTPServer、HTML5、python3、ragged、storage、shellscript 与 my_python_module 等 false-positive boundaries。
+
+Requests 只属于 structured shared vocabulary，不进入 free-text whitelist，避免普通 prose 中的 requests 被误识别为 library skill。
+
+OPPO persisted skills 即使为：
+
+~~~text
+[]
+~~~
+
+也可以从真实岗位 description 检测 RAG / LLM。没有支持的 evidence 时返回空 JobSkillEvidence，不调用 LLM 猜测。
+
+---
+
+### Matcher
+
+新增：
+
+~~~text
+app/matching/matcher.py
+~~~
+
+CandidateMatcher 是 pure deterministic boundary，不访问 database、network、Agent 或 provider。
+
+语义：
+
+~~~text
+matched_skills:
+detected job skills present in candidate profile
+
+missing_skills:
+detected job skills absent from candidate profile
+~~~
+
+非空 evidence 的 score：
+
+~~~text
+round-half-up(
+    100 * matched_count / detected_count
+)
+~~~
+
+整数实现：
+
+~~~text
+(200 * matched_count + detected_count)
+// (2 * detected_count)
+~~~
+
+Reason 根据实际 counts 决定，不从 rounded score 反推。Zero evidence：
+
+~~~text
+score = 0
+reason = insufficient_evidence
+~~~
+
+---
+
+### Matching Service
+
+新增：
+
+~~~text
+app/matching/service.py
+~~~
+
+JobMatchingService 依赖 JobQueryPort、JobSkillExtractor 与 CandidateMatcher。
+
+分页：
+
+~~~text
+first page_size = 100
+↓
+freeze page_count from first total
+↓
+collect every finite page
+↓
+deduplicate by job ID
+↓
+global rank
+~~~
+
+这样不会把匹配静默限制在 database page 1。重复 ID 保留第一次出现的 JobRead。
+
+城市：
+
+~~~text
+preferred_cities = []
+→ no city restriction
+
+preferred_cities non-empty
+→ normalized exact eligibility filter
+~~~
+
+城市过滤不改变 skill score。
+
+Ranking：
+
+~~~text
+1. match_score descending
+2. matched skill count descending
+3. numeric job ID ascending
+~~~
+
+当前 top_k 只接受 strict positive int，没有 maximum。no jobs 返回空 list；query / extractor / matcher exception fail-fast propagation。
+
+---
+
+### MatchJobsTool
+
+新增：
+
+~~~text
+app/agent/tools/matching_tool.py
+~~~
+
+Tool contract：
+
+~~~text
+name:
+match_jobs
+
+arguments:
+skills
+preferred_cities
+top_k
+
+default top_k:
+5
+~~~
+
+MatchJobsArguments 继承 CandidateProfile validation，并增加 strict integer top_k。
+
+Execution：
+
+~~~text
+validated arguments
+↓
+CandidateProfile
+↓
+JobMatchingService
+↓
+JobMatchResult list
+↓
+JSON-compatible tool data
+~~~
+
+Tool 不直接使用 SQLAlchemy，也不负责 skill detection、score 或 ranking。
+
+---
+
+### Agent Runtime Integration
+
+修改：
+
+~~~text
+app/api/dependencies.py
+~~~
+
+Production composition 在同一个 request database session 上构造 RepositoryJobQueryAdapter、JobMatchingService 与 MatchJobsTool。
+
+ToolRegistry 当前包含：
+
+~~~text
+search_jobs
+get_job_detail
+match_jobs
+~~~
+
+Stage 11 没有修改 AgentOrchestrator、ModelClient 或 DeepSeekModelClient。Sequential Tool Calling 继续保持。
+
+Fake Model HTTP integration 验证：
+
+~~~text
+model
+→ match_jobs
+→ structured tool result
+→ next ModelRequest
+→ final answer
+~~~
+
+现有 POST /api/agent/query contract 保持兼容，没有新增 standalone matching HTTP endpoint。
+
+---
+
+### Stage 11G真实验证
+
+验证脚本：
+
+~~~text
+stage11g_agent_verify.py
+~~~
+
+该脚本当前是 untracked verification artifact。
+
+2026-08-21 对当前 HEAD 执行了 real OPPO + temporary SQLite + DeepSeek verification。
+
+~~~text
+Provider:
+DeepSeek
+
+Model:
+deepseek-v4-flash
+~~~
+
+API key 只从 environment 读取，未输出具体值。
+
+#### Real OPPO / SQLite
+
+~~~text
+count:
+1
+
+job:
+AI产品实习生
+
+company:
+OPPO
+
+city:
+东莞
+
+skills:
+[]
+
+position identity:
+2061649545671430146
+
+published_at:
+2026-06-01
+~~~
+
+#### Deterministic Oracle
+
+Candidate：
+
+~~~text
+skills = [RAG]
+preferred_cities = [东莞市]
+top_k = 1
+~~~
+
+Result：
+
+~~~text
+detected_job_skills = [RAG, LLM]
+matched_skills = [RAG]
+missing_skills = [LLM]
+match_score = 50
+reason = partial_match
+~~~
+
+#### Real HTTP Agent
+
+~~~text
+POST /api/agent/query:
+200
+
+steps:
+2
+
+tool_execution_count:
+1
+~~~
+
+Final answer 使用 OPPO「AI产品实习生」、东莞、RAG matched、LLM missing 与 50 分。
+
+#### Direct Agent Trace
+
+~~~text
+steps:
+2
+
+tool_count:
+1
+
+tool:
+match_jobs
+
+arguments:
+skills = [RAG]
+preferred_cities = [东莞市]
+top_k = 1
+
+success:
+True
+~~~
+
+Tool result 与 direct deterministic oracle 完全一致，因此 50 分由 application matcher 产生，不是 DeepSeek 自行计算。
+
+第一次脚本执行在 HTTP 已返回 200 后，因为 Windows GBK console 不能打印 answer 中的 emoji 而发生 UnicodeEncodeError。使用 UTF-8 Python console 重跑后完整 exit code 0；这是 verification output encoding 问题，不是 application failure。
+
+---
+
+### 测试
+
+Stage 11 automated tests 全部保持 network-free，不需要 real OPPO、real DeepSeek 或 API key。
+
+Current targeted collection：
+
+~~~text
+tests/matching/test_contracts.py:
+38
+
+tests/matching/test_skill_extractor.py:
+36
+
+tests/matching/test_matcher.py:
+22
+
+tests/matching/test_service.py:
+37
+
+tests/agent/test_matching_tool.py:
+19
+
+tests/test_agent_api.py:
+12
+
+Total:
+164 passed in 6.55s
+~~~
+
+Full regression：
+
+~~~text
+503 passed in 14.05s
+
+Warnings:
+0
+~~~
+
+覆盖 strict contracts、alias normalization、zero evidence、text false-positive boundaries、integer score、stable reason、city eligibility、pagination beyond first page、stable ranking、top_k、Tool serialization、production Agent composition 与 HTTP regressions。
+
+---
+
+### Stage 11 Implementation Commits
+
+~~~text
+a5e5028 docs: add stage 11 task specification
+
+024dc24 feat: add candidate matching contracts
+
+928caed feat: add deterministic job skill extraction
+
+f40e62a feat: add deterministic candidate matcher
+
+b1f939b feat: add job matching service
+
+935c5df feat: add match jobs agent tool
+
+d21271a feat: integrate matching tool into agent runtime
+~~~
+
+以上只记录 repository 当前已有 commits。
+
+~~~text
+Documentation commit:
+UNKNOWN
+
+PR number:
+UNKNOWN
+
+merge SHA:
+UNKNOWN
+
+main branch status:
+UNKNOWN
+
+post-merge regression:
+UNKNOWN
+~~~
+
+---
+
+### Limitations
+
+当前 limitation：
+
+~~~text
+15 canonical display skills
+narrow lexical whitelist
+no semantic matching
+no skill weighting
+no skill proficiency model
+score covers detected job skills only
+city is exact hard eligibility
+top_k has no maximum
+all collected jobs ranked in memory
+first-page total freezes pagination horizon
+no transactional pagination snapshot
+no candidate persistence
+no match persistence
+no history / analytics
+no standalone matching endpoint
+external OPPO / DeepSeek behavior may change
+~~~
+
+Task specification 期望 bounded top_k，但当前 implementation / tests 明确接受任意 positive strict int。Formal Final Review 对该差异的 disposition：
+
+~~~text
+UNKNOWN
+~~~
+
+Stage 11 同样没有实现 resume parsing、OCR、embedding、Vector DB、RAG retrieval、LLM scoring、parallel Tool Calling、Multi-Agent、Memory、Streaming、scheduler 或 database migration。
+
+---
+
+### Lessons
+
+- LLM 应负责 intent 与 explanation，不应成为不可重复的 scoring engine
+- Shared canonical vocabulary 防止 Cleaner、candidate 与 extractor 形成 split skill identity
+- Zero evidence 是正常且必须显式表达的 business state
+- Lexical whitelist 必须同时测试 detection 与 false-positive boundary
+- Integer half-up formula 可以避免 floating-point score drift
+- Reason 应根据 match counts 决定，不应从 rounded score 反推
+- Stable ranking 需要最后一个 deterministic tie-break
+- Matching correctness 包括 database pagination correctness
+- 城市 eligibility 不应污染技术 skill score
+- Tool 应保持 thin adapter，不直接查询 SQLAlchemy
+- Fake ports / models、temporary SQLite 与 real E2E 解决不同验证问题
+- Direct deterministic oracle + Agent Tool trace 可以证明 LLM 没有替换应用分数
+- Verification harness 的 Unicode 输出问题需要与 application failure 分开诊断
+
+---
+
+### 当前状态
+
+~~~text
+Implementation:
+COMPLETE
+
+Targeted tests:
+164 passed
+
+Full regression:
+503 passed
+
+Warnings:
+0
+
+Real Stage 11G:
+PASS
+
+Documentation:
+COMPLETE IN WORKING TREE
+
+Formal Final Review:
+UNKNOWN
+
+MUST FIX:
+UNKNOWN
+
+SHOULD FIX:
+UNKNOWN
+
+PR / merge:
+UNKNOWN
+
+main branch status:
+UNKNOWN
+
+post-merge regression:
+UNKNOWN
+
+PROJECT_STATE:
+NOT UPDATED BY THIS TASK
+~~~
+
+Stage 11 当前 feature implementation 与 live verification 已完成，但在 formal Final Review、PR、merge 与 post-merge regression 均无法从 repository 确认时，不把 Git lifecycle closeout 声明为完成。
