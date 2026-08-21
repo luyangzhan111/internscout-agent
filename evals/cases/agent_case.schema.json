@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://internscout.local/schemas/agent-case.schema.json",
+  "title": "InternScout Agent Evaluation Case",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "category",
+    "description",
+    "user_message",
+    "expected"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "search_jobs",
+        "get_job_detail",
+        "match_jobs",
+        "failure"
+      ]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected": {
+      "$ref": "#/$defs/expected"
+    }
+  },
+  "$defs": {
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "tool_sequence",
+        "tool_calls",
+        "tool_results",
+        "answer"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "success",
+            "controlled_failure"
+          ]
+        },
+        "tool_sequence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tool_calls": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tool_call"
+          }
+        },
+        "tool_results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tool_result"
+          }
+        },
+        "answer": {
+          "$ref": "#/$defs/answer_assertions"
+        }
+      }
+    },
+    "tool_call": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_name",
+        "arguments"
+      ],
+      "properties": {
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "object"
+        }
+      }
+    },
+    "tool_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool_name",
+        "success"
+      ],
+      "properties": {
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "error_contains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "data_assertions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/data_assertion"
+          }
+        }
+      }
+    },
+    "data_assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\$|[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*|items\\[0\\](?:\\.[A-Za-z_][A-Za-z0-9_]*)*)$",
+          "minLength": 1
+        },
+        "equals": {},
+        "contains": {}
+      },
+      "oneOf": [
+        {
+          "required": [
+            "equals"
+          ]
+        },
+        {
+          "required": [
+            "contains"
+          ]
+        }
+      ]
+    },
+    "answer_assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains",
+        "excludes"
+      ],
+      "properties": {
+        "contains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
