@@ -2,7 +2,7 @@
 
 InternScout Agent 是一个基于 Agent Runtime 的智能实习岗位采集与匹配系统，用于演示从岗位数据采集、清洗、持久化和查询，到确定性候选人匹配与大模型工具调用的完整工程链路。
 
-项目当前完成至 Stage 11。它以可测试、可解释和边界清晰为目标，保留 Mock 数据链路，并接入 OPPO Careers 作为首个经过验证的真实招聘数据源。
+项目当前完成至 Stage 12。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI 和 Product Demo 能力。它以可测试、可解释和边界清晰为目标，保留 Mock 数据链路，并接入 OPPO Careers 作为首个经过验证的真实招聘数据源。
 
 ## 核心能力
 
@@ -42,7 +42,33 @@ Stage 11 加入了确定性、可测试的候选人 / 岗位匹配能力：
 
 `MatchJobsTool` 只负责 Agent Tool 边界与服务委托；技能提取、评分和排序逻辑保留在 matching layer。
 
+## Streamlit Demo
+
+项目提供一个轻量的 Streamlit Product Demo，用于展示现有 Agent 能力和完整的请求链路。
+
+- 用户输入候选人技能和意向城市。
+- Demo 通过 FastAPI 调用 Agent，不直接访问 Agent Runtime、数据库或 Matching Service。
+- 页面展示推荐岗位、匹配分数、已匹配技能、缺失技能和 Agent 推荐解释。
+
 ## Architecture
+
+Product Demo flow:
+
+```text
+User
+ |
+Streamlit Demo
+ |
+FastAPI
+ |
+Agent Runtime
+ |
+Tools
+ |
+Matching
+ |
+Database
+```
 
 ```text
 Local sample HTML                         OPPO Careers
@@ -114,6 +140,7 @@ Local sample HTML                         OPPO Careers
 - Pydantic
 - pytest
 - httpx
+- Streamlit
 - DeepSeek API
 
 ## Local Development
@@ -132,7 +159,22 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload
 ```
 
+启动 Streamlit Demo：
+
+```powershell
+streamlit run demo/app.py
+```
+
 使用真实 DeepSeek Provider 前，需要配置 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL`。不要把 API key 写入代码或提交到仓库。
+
+## Project Highlights
+
+- **Agent Runtime**：provider-neutral、request-scoped 的顺序工具调用运行时。
+- **Tool Calling**：通过 ToolRegistry 连接岗位查询、岗位详情和匹配能力。
+- **Deterministic Matching**：提供稳定、可测试、可解释的匹配分数和技能分析。
+- **Evaluation Framework**：使用离线、确定性的评估场景验证 Agent 行为。
+- **CI**：通过 GitHub Actions 自动执行完整测试回归。
+- **Product Demo**：使用 Streamlit 展示 User → FastAPI → Agent Runtime 的实际产品链路。
 
 ## Testing
 
@@ -140,6 +182,10 @@ Stage 11 merge 后完整回归基线：
 
 - **503 passed**
 - **0 warnings**
+
+Stage 12 当前完整回归基线：
+
+- **567 passed**
 
 运行测试：
 

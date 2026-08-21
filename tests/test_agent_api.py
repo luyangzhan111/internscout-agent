@@ -342,6 +342,149 @@ def test_agent_query_matches_jobs_through_production_composition(
     json.dumps(execution.result.data, ensure_ascii=False)
 
 
+def test_agent_query_excludes_recommendations_when_disabled(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = agent_api_client
+    fake_model = FakeModelClient(
+        responses=[
+            FinalAnswerResponse(answer="已完成岗位分析。")
+        ]
+    )
+
+    with override_model_client(fake_model):
+        response = client.post(
+            "/api/agent/query",
+            json={
+                "user_message": "分析岗位",
+                "include_recommendations": False,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "已完成岗位分析。",
+        "steps": 1,
+        "tool_execution_count": 0,
+    }
+
+
+def test_agent_query_returns_structured_recommendations_when_enabled(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, session_factory = agent_api_client
+    seed_jobs(
+        session_factory,
+        create_job(
+            skills=["python", "fastapi"],
+        ),
+    )
+    fake_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="demo_match_001",
+                tool_name="match_jobs",
+                arguments={
+                    "skills": ["Python"],
+                    "preferred_cities": ["深圳"],
+                    "top_k": 1,
+                },
+            ),
+            FinalAnswerResponse(answer="已找到匹配岗位。"),
+        ]
+    )
+
+    with override_model_client(fake_model):
+        response = client.post(
+            "/api/agent/query",
+            json={
+                "user_message": "匹配深圳的 Python 岗位",
+                "include_recommendations": True,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "已找到匹配岗位。"
+    assert payload["steps"] == 2
+    assert payload["tool_execution_count"] == 1
+    assert len(payload["recommendations"]) == 1
+    recommendation = payload["recommendations"][0]
+    assert recommendation["job"]["title"] == "Python后端实习生"
+    assert recommendation["job"]["company"] == "星河科技"
+    assert recommendation["match_score"] == 50
+    assert recommendation["matched_skills"] == ["Python"]
+    assert recommendation["missing_skills"] == ["FastAPI"]
+    assert recommendation["reason"] == "partial_match"
+    assert "call" not in recommendation
+    assert "result" not in recommendation
+
+
+def test_agent_query_returns_empty_recommendations_without_match_jobs(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = agent_api_client
+    fake_model = FakeModelClient(
+        responses=[
+            FinalAnswerResponse(answer="没有执行匹配工具。")
+        ]
+    )
+
+    with override_model_client(fake_model):
+        response = client.post(
+            "/api/agent/query",
+            json={
+                "user_message": "介绍一下系统",
+                "include_recommendations": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "没有执行匹配工具。",
+        "steps": 1,
+        "tool_execution_count": 0,
+        "recommendations": [],
+    }
+
+
+def test_agent_query_returns_empty_recommendations_for_match_failure(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = agent_api_client
+    fake_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="demo_match_failure_001",
+                tool_name="match_jobs",
+                arguments={"skills": []},
+            ),
+            FinalAnswerResponse(answer="匹配输入无效。"),
+        ]
+    )
+
+    with override_model_client(fake_model):
+        response = client.post(
+            "/api/agent/query",
+            json={
+                "user_message": "匹配岗位",
+                "include_recommendations": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "answer": "匹配输入无效。",
+        "steps": 2,
+        "tool_execution_count": 1,
+        "recommendations": [],
+    }
+
+    execution = fake_model.requests[1].tool_executions[0]
+    assert execution.result.success is False
+    assert execution.result.tool_name == "match_jobs"
+
+
 def test_agent_query_recovers_from_real_tool_validation_failure(
     agent_api_client: tuple[TestClient, sessionmaker[Session]],
 ) -> None:
