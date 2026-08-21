@@ -19,6 +19,7 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - DeepSeek 真实 LLM Provider Adapter 与真实 Provider / Agent 验证
 - CandidateProfile、JobSkillExtractor、CandidateMatcher 与 JobMatchingService
 - MatchJobsTool 与 deterministic and explainable job matching
+- Agent evaluation layer、offline evaluation runner 与 application composition factory
 - 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
 
 项目当前不声称具备 multi-source orchestration、production scheduler、real-source HTTP trigger 或 distributed crawling。
@@ -55,21 +56,33 @@ Merge commit message: feat: complete Stage 11 deterministic candidate job matchi
 
 Branch: main
 
-Stage 11 merge commit: e3b9b6c
+Stage 12 merge commit: d77bbc3
+
+Stage 12 merge commit full hash: d77bbc391613c886bffdd04ce522e4937451e117
 
 Working tree before PROJECT_STATE update: clean
 
-Post-merge full regression: 503 passed, 0 warnings
+Post-merge full regression: 551 passed
 
-The later PROJECT_STATE documentation commit does not replace the Stage 11 feature merge identity. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
+Stage 11 merge identity e3b9b6c remains historical. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
 
 Stage 10 historical regression facts remain: combined OPPO regression 131 passed；post-merge main regression 350 passed, 0 warnings。
+
+## Stage 12 Merge Identity
+
+Short: d77bbc3
+
+Full: d77bbc391613c886bffdd04ce522e4937451e117
+
+Corresponding merge: Merge pull request #12 from luyangzhan111/feat/stage-12-agent-evaluation-ci-demo
+
+Merge commit message: feat: implement agent evaluation framework and GitHub Actions CI
 
 # 4. Current Stage
 
 ## 已完成阶段
 
-Stage 0 ～ Stage 11
+Stage 0 ～ Stage 12
 
 ## Stage 10 状态
 
@@ -98,13 +111,24 @@ SHOULD FIX: 0
 Regression:
 503 passed, 0 warnings
 
+## Stage 12 状态
+
+Implementation: COMPLETE
+Evaluation Layer: PASS
+Composition Factory: PASS
+GitHub Actions CI: PASS
+Post-merge main regression: PASS
+
+Regression:
+`python -m pytest -q` => 551 passed
+
 ## Next Stage
 
-Stage 12
+Stage 13
 
 Specific Goal: UNKNOWN
 
-Stage 12 必须从 repository reality 开始正式 Planning；本快照不猜测 Stage 12 roadmap，也不开始 Stage 12 规划。
+Stage 13 必须从 repository reality 开始正式 Planning；本快照不猜测 Stage 13 roadmap，也不开始 Stage 13 规划。
 
 # 5. Implemented Backend Capabilities
 
@@ -127,6 +151,12 @@ Stage 11 matching components：CandidateProfile、JobSkillExtractor、CandidateM
 - matched/missing skill analysis
 - city filtering
 - deterministic ranking
+
+## Stage 12 evaluation and composition
+
+- `app/agent/composition.py` 提供 `create_agent_orchestrator`，集中构造 request-scoped Agent Runtime object graph。
+- `evals/` 提供 evaluation contracts、dataset loading、offline runner 与 deterministic scorers。
+- Evaluation runner 通过注入的 ModelClientFactory 与 JobQueryFactory 执行离线 evaluation cases。
 
 ## FastAPI and job data
 
@@ -168,7 +198,7 @@ Agent Layer 位于 app/agent/，提供 provider-neutral Tool-Calling Runtime。A
 
 # 7. Application Composition and HTTP Boundary
 
-FastAPI composition root：app/api/dependencies.py。Provider construction 是 lazy 的。环境变量为 DEEPSEEK_API_KEY、DEEPSEEK_MODEL；不记录或暴露 API key value。
+FastAPI composition root：app/api/dependencies.py。Agent application composition factory：app/agent/composition.py。Provider construction 是 lazy 的。环境变量为 DEEPSEEK_API_KEY、DEEPSEEK_MODEL；不记录或暴露 API key value。
 
 # 8. Real LLM Provider Layer
 
@@ -218,6 +248,12 @@ Stage 10 decisions：
 - No database identity redesign。
 - No cross-page exact metadata equality assumption。
 
+Stage 12 decisions：
+
+- Agent Runtime object graph construction is centralized in `create_agent_orchestrator`。
+- Evaluation runs use injected offline ModelClient and JobQuery factories。
+- GitHub Actions runs the full `python -m pytest -q` suite on push and pull requests targeting `main`。
+
 # 11. OPPO Source Contract and Defensive Rules
 
 以下是 observed website/internal JSON endpoints，不是 officially supported public developer API：
@@ -241,8 +277,9 @@ source_url 存储 human recruitment page。
 
 Current authoritative baseline：
 
-- Full project: 503 passed, 0 warnings
-- Post-merge main regression: 503 passed, 0 warnings
+- Full project: `python -m pytest -q` => 551 passed
+- Post-merge main regression: PASS
+- GitHub Actions CI: PASS
 - Final Stage 11 Review: PASS；MUST FIX = 0；SHOULD FIX = 0
 - Real Stage 11G Verification: PASS
 
@@ -284,11 +321,13 @@ Real Stage 10 verification：
 
 .gitattributes
 .gitignore
+.github/workflows/ci.yml
 PROJECT_STATE.md
 README.md
 app/__init__.py
 app/agent/__init__.py
 app/agent/contracts.py
+app/agent/composition.py
 app/agent/exceptions.py
 app/agent/model_client.py
 app/agent/orchestrator.py
@@ -345,7 +384,15 @@ docs/tasks/stage-08-task.md
 docs/tasks/stage-09-task.md
 docs/tasks/stage-10-task.md
 docs/tasks/stage-11-task.md
+docs/tasks/stage-12-task.md
 requirements.txt
+evals/__init__.py
+evals/contracts.py
+evals/dataset.py
+evals/runner.py
+evals/scorers.py
+evals/cases/agent_case.schema.json
+evals/cases/agent_cases.jsonl
 tests/agent/__init__.py
 tests/agent/fakes/__init__.py
 tests/agent/fakes/fake_model_client.py
@@ -353,6 +400,7 @@ tests/agent/providers/__init__.py
 tests/agent/providers/test_deepseek_client.py
 tests/agent/test_agent_exceptions.py
 tests/agent/test_base_tool.py
+tests/agent/test_composition.py
 tests/agent/test_contracts.py
 tests/agent/test_job_tools.py
 tests/agent/test_matching_tool.py
@@ -361,6 +409,12 @@ tests/agent/test_orchestrator.py
 tests/agent/test_state.py
 tests/agent/test_tool_registry.py
 tests/database/test_job_query_adapter.py
+tests/evaluation/__init__.py
+tests/evaluation/test_contracts.py
+tests/evaluation/test_dataset.py
+tests/evaluation/test_evaluation_gate.py
+tests/evaluation/test_runner.py
+tests/evaluation/test_scorers.py
 tests/matching/__init__.py
 tests/matching/test_contracts.py
 tests/matching/test_matcher.py
@@ -391,7 +445,7 @@ tests/test_stage6_api_flow.py
 
 # 15. Current Documentation and Development Workflow
 
-Current Stage documentation：docs/tasks/stage-11-task.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
+Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-11-task.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
 
 长期工作方式：Architecture-First + Codex-Driven Implementation + Human Verification。
 
@@ -401,4 +455,4 @@ Codex Git restrictions remain unchanged：默认禁止 git add、git commit、gi
 
 标准流：formal Planning from repository reality → feature branch → implementation → tests → Final Read-Only Review → Stage Review → Development Log → PR → merge → main regression → PROJECT_STATE → branch cleanup。
 
-Next Stage 为 Stage 12，Specific Goal 为 UNKNOWN；必须先正式 Planning，不得从本快照推断或承诺未来功能。
+Next Stage 为 Stage 13，Specific Goal 为 UNKNOWN；必须先正式 Planning，不得从本快照推断或承诺未来功能。

@@ -5152,3 +5152,49 @@ NOT UPDATED BY THIS TASK
 ~~~
 
 Stage 11 当前 feature implementation 与 live verification 已完成，但在 formal Final Review、PR、merge 与 post-merge regression 均无法从 repository 确认时，不把 Git lifecycle closeout 声明为完成。
+
+## Stage 12 — Agent Evaluation / CI
+
+Date:
+
+2026-08
+
+Branch:
+
+feat/stage-12-agent-evaluation-ci-demo
+
+Merged into:
+
+main
+
+## Completed
+
+Implemented:
+
+- Agent Composition Factory
+- Deterministic Agent Evaluation Framework
+- Evaluation Dataset
+- Evaluation Runner
+- Deterministic Scorers
+- GitHub Actions CI
+
+## Validation
+
+Local:
+
+python -m pytest -q
+
+Result:
+
+551 passed
+
+CI:
+
+GitHub Actions passed
+
+## Architecture Decisions
+
+- Evaluation remains outside Agent Runtime.
+- CI uses FakeModelClient.
+- No live DeepSeek API calls in blocking CI.
+- Agent Runtime and Tool behavior remain unchanged.
