@@ -1,6 +1,7 @@
 """SQLite数据库连接与会话管理。"""
 
 from collections.abc import Generator
+import os
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -9,6 +10,17 @@ from app.database.models import Base
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./internscout.db"
+DATABASE_URL_ENV = "INTERNSCOUT_DATABASE_URL"
+
+
+def get_database_url() -> str:
+    """Return the configured database URL or the local SQLite default."""
+
+    configured_url = os.getenv(DATABASE_URL_ENV)
+    if configured_url is None or not configured_url.strip():
+        return DEFAULT_DATABASE_URL
+
+    return configured_url.strip()
 
 
 def create_database_engine(
@@ -40,7 +52,7 @@ def create_session_factory(
     )
 
 
-database_engine = create_database_engine()
+database_engine = create_database_engine(get_database_url())
 SessionLocal = create_session_factory(database_engine)
 
 
