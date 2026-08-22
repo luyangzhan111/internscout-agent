@@ -20,6 +20,7 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - CandidateProfile、JobSkillExtractor、CandidateMatcher 与 JobMatchingService
 - MatchJobsTool 与 deterministic and explainable job matching
 - Agent evaluation layer、offline evaluation runner 与 application composition factory
+- Stage 12E Streamlit Product Demo、Demo HTTP client、Demo-side contracts 与 rendering layer
 - 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
 
 项目当前不声称具备 multi-source orchestration、production scheduler、real-source HTTP trigger 或 distributed crawling。
@@ -34,6 +35,7 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - SQLite
 - httpx（OPPO real-source HTTP boundary）
 - pytest
+- Streamlit 1.48.1
 - OpenAI Python SDK（作为 DeepSeek OpenAI-compatible API 客户端）
 - DeepSeek Responses API
 - Git、GitHub、Codex、VS Code
@@ -62,7 +64,7 @@ Stage 12 merge commit full hash: d77bbc391613c886bffdd04ce522e4937451e117
 
 Working tree before PROJECT_STATE update: clean
 
-Post-merge full regression: 551 passed
+Post-merge full regression: 567 passed
 
 Stage 11 merge identity e3b9b6c remains historical. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
 
@@ -78,11 +80,21 @@ Corresponding merge: Merge pull request #12 from luyangzhan111/feat/stage-12-age
 
 Merge commit message: feat: implement agent evaluation framework and GitHub Actions CI
 
+## Stage 12E Merge Identity
+
+Short: ae21931
+
+Full: ae2193130dd480dc06d3cb245e464ba5ba0336cc
+
+Corresponding merge: Merge pull request #13 from luyangzhan111/feat/stage-12e-product-demo
+
+Merge commit message: feat: add Streamlit product demo for agent matching
+
 # 4. Current Stage
 
 ## 已完成阶段
 
-Stage 0 ～ Stage 12
+Stage 0 ～ Stage 12E
 
 ## Stage 10 状态
 
@@ -111,7 +123,7 @@ SHOULD FIX: 0
 Regression:
 503 passed, 0 warnings
 
-## Stage 12 状态
+## Stage 12A-D 状态
 
 Implementation: COMPLETE
 Evaluation Layer: PASS
@@ -119,8 +131,25 @@ Composition Factory: PASS
 GitHub Actions CI: PASS
 Post-merge main regression: PASS
 
-Regression:
+Historical regression before Stage 12E:
 `python -m pytest -q` => 551 passed
+
+## Stage 12E 状态
+
+Implementation: COMPLETE
+Optional Agent recommendation projection: PASS
+Streamlit Product Demo: PASS
+Demo HTTP client / contracts / rendering: PASS
+Dependency resolution (`streamlit==1.48.1`, `packaging==25.0`): PASS
+Streamlit runtime smoke: PASS
+Streamlit → FastAPI → Agent Runtime → match_jobs → Matching → local SQLite → UI: PASS
+GitHub Actions CI: PASS
+PR #13 merge: PASS
+MUST FIX: 0
+SHOULD FIX: 0
+
+Authoritative regression:
+`python -m pytest -q` => 567 passed
 
 ## Next Stage
 
@@ -158,11 +187,19 @@ Stage 11 matching components：CandidateProfile、JobSkillExtractor、CandidateM
 - `evals/` 提供 evaluation contracts、dataset loading、offline runner 与 deterministic scorers。
 - Evaluation runner 通过注入的 ModelClientFactory 与 JobQueryFactory 执行离线 evaluation cases。
 
+## Stage 12E product demo
+
+- `demo/app.py` 提供 Streamlit UI，收集候选人技能与意向城市并渲染推荐结果。
+- `demo/client.py` 仅通过 HTTP 调用现有 `POST /api/agent/query`。
+- `demo/contracts.py` 校验 Demo-side response contract；`demo/rendering.py` 负责展示转换。
+- Demo 默认消费 local SQLite 中已有岗位数据；Demo 数据不是实时招聘网站数据。
+- OPPO real-source ingestion capability 独立存在，不等同于默认 Demo 数据来源。
+
 ## FastAPI and job data
 
 当前 HTTP API：GET /、GET /api/health、POST /api/crawl、GET /api/jobs、GET /api/jobs/{job_id}、POST /api/agent/query。
 
-POST /api/agent/query 表示每个 request 触发一次独立、无持久会话的 Agent run。公共 response 只包含 answer、steps、tool_execution_count；它不是 persistent chat，也不暴露内部 ToolExecution trace。
+POST /api/agent/query 表示每个 request 触发一次独立、无持久会话的 Agent run。请求可通过 `include_recommendations=true` opt in 结构化 `match_jobs` 推荐投影；默认仍只返回 answer、steps、tool_execution_count。它不是 persistent chat，也不暴露内部 ToolExecution trace。
 
 岗位服务支持健康与数据库检查、模拟岗位采集、岗位列表与详情查询、城市 / 公司 / 技能筛选、组合筛选与分页。岗位核心数据由 Pydantic 验证，数据库内部 identity_key 不向 API 或 Agent Tool 暴露。
 
@@ -254,6 +291,15 @@ Stage 12 decisions：
 - Evaluation runs use injected offline ModelClient and JobQuery factories。
 - GitHub Actions runs the full `python -m pytest -q` suite on push and pull requests targeting `main`。
 
+Stage 12E decisions：
+
+- Reuse the existing `POST /api/agent/query`; do not introduce a new recommendation endpoint。
+- Recommendation projection is opt-in through `include_recommendations` and does not alter Agent Runtime or matching logic。
+- Streamlit communicates only with FastAPI through the Demo HTTP client。
+- Demo presentation owns validation and rendering only; it does not query SQLite or execute matching directly。
+- Default Demo data is local SQLite / MockJobCrawler data, not real-time recruiting website data。
+- OPPO real-source ingestion remains a separate capability；`POST /api/crawl` remains MockJobCrawler-specific。
+
 # 11. OPPO Source Contract and Defensive Rules
 
 以下是 observed website/internal JSON endpoints，不是 officially supported public developer API：
@@ -277,9 +323,11 @@ source_url 存储 human recruitment page。
 
 Current authoritative baseline：
 
-- Full project: `python -m pytest -q` => 551 passed
+- Full project: `python -m pytest -q` => 567 passed
 - Post-merge main regression: PASS
 - GitHub Actions CI: PASS
+- Streamlit runtime smoke: PASS
+- Full Demo chain through local SQLite to UI: PASS
 - Final Stage 11 Review: PASS；MUST FIX = 0；SHOULD FIX = 0
 - Real Stage 11G Verification: PASS
 
@@ -307,6 +355,9 @@ Real Stage 10 verification：
 
 # 13. Current Limitations
 
+- Demo 默认使用 local SQLite 中已有岗位数据，不表示实时招聘网站数据。
+- OPPO real-source ingestion capability 与默认 Demo 数据来源不同；OPPO 仍不是 `/api/crawl` 的触发来源。
+- Demo 未部署到公网；Streamlit 与 FastAPI 需要分别在本地运行。
 - Mock HTML remains supported, but OPPO is the first real source。
 - OPPO 使用 observed website/internal JSON endpoints，source schema may change。
 - No production HTTP trigger for real OPPO crawling；/api/crawl remains MockJobCrawler-specific。
@@ -377,14 +428,20 @@ app/services/processor.py
 app/services/skill_vocabulary.py
 app/workflows/__init__.py
 app/workflows/job_ingestion.py
+demo/__init__.py
+demo/app.py
+demo/client.py
+demo/contracts.py
+demo/rendering.py
 docs/codex-workflow.md
 docs/development-log.md
-docs/stage-reviews/stage-01-review.md through stage-11-review.md
+docs/stage-reviews/stage-01-review.md through stage-12-review.md
 docs/tasks/stage-08-task.md
 docs/tasks/stage-09-task.md
 docs/tasks/stage-10-task.md
 docs/tasks/stage-11-task.md
 docs/tasks/stage-12-task.md
+docs/tasks/stage-12e-task.md
 requirements.txt
 evals/__init__.py
 evals/contracts.py
@@ -409,6 +466,9 @@ tests/agent/test_orchestrator.py
 tests/agent/test_state.py
 tests/agent/test_tool_registry.py
 tests/database/test_job_query_adapter.py
+tests/demo/test_client.py
+tests/demo/test_contracts.py
+tests/demo/test_rendering.py
 tests/evaluation/__init__.py
 tests/evaluation/test_contracts.py
 tests/evaluation/test_dataset.py
@@ -445,7 +505,7 @@ tests/test_stage6_api_flow.py
 
 # 15. Current Documentation and Development Workflow
 
-Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-11-task.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
+Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-12e-task.md、docs/tasks/stage-11-task.md、docs/stage-reviews/stage-12-review.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
 
 长期工作方式：Architecture-First + Codex-Driven Implementation + Human Verification。
 

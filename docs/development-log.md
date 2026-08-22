@@ -5198,3 +5198,96 @@ GitHub Actions passed
 - CI uses FakeModelClient.
 - No live DeepSeek API calls in blocking CI.
 - Agent Runtime and Tool behavior remain unchanged.
+
+---
+
+## Stage 12E — Basic Product Demo Closeout
+
+Date:
+
+2026-08-22
+
+Current branch:
+
+`main`
+
+Feature branch:
+
+`feat/stage-12e-product-demo`
+
+Pull Request:
+
+PR #13 — merged
+
+Merge identity:
+
+- Short: `ae21931`
+- Full: `ae2193130dd480dc06d3cb245e464ba5ba0336cc`
+- Merge message: `Merge pull request #13 from luyangzhan111/feat/stage-12e-product-demo`
+
+### Implementation Summary
+
+Stage 12E added a minimal Streamlit Product Demo for the existing Agent matching capability.
+
+Implemented:
+
+- Optional structured recommendation projection on `POST /api/agent/query`.
+- `include_recommendations` request field with opt-in behavior.
+- Streamlit UI in `demo/app.py`.
+- Demo HTTP client in `demo/client.py`.
+- Demo-side Pydantic contracts in `demo/contracts.py`.
+- Pure recommendation rendering transformations in `demo/rendering.py`.
+- Demo unit tests and Agent API projection tests.
+
+The Demo communicates with FastAPI over HTTP and does not directly access the Agent Runtime, Matching layer, or SQLite. The default Demo data is existing local SQLite data; it is not real-time recruiting website data. OPPO real-source ingestion remains a separate capability, and `/api/crawl` still triggers only `MockJobCrawler`.
+
+### Dependency Resolution
+
+Stage 12E added `streamlit==1.48.1`. A dependency conflict required changing the pinned `packaging` version to `25.0`. During verification, an initial Streamlit package import/runtime issue was encountered; the final pinned environment imported and ran successfully.
+
+### Provider Configuration and Runtime Debugging
+
+When the required DeepSeek environment configuration was missing, the Backend returned the expected HTTP 503. The missing configuration was diagnosed without recording or exposing any API key value.
+
+After the required provider configuration was available, the final runtime verification succeeded:
+
+```text
+Streamlit → FastAPI → Agent Runtime → match_jobs → Matching → local SQLite → UI: PASS
+```
+
+This verification validates the local application chain. It does not claim that the Demo is backed by live recruiting website data, and the Demo has not been deployed to the public internet.
+
+### Validation
+
+Local final regression:
+
+```text
+python -m pytest -q
+567 passed
+```
+
+GitHub Actions CI: PASS
+
+Streamlit runtime smoke: PASS
+
+### Preserved Boundaries
+
+- Agent remains stateless.
+- Tool Calling remains sequential.
+- `/api/crawl` remains MockJobCrawler-specific.
+- OPPO real-source ingestion remains separate from the default Demo data source.
+- RAG, Memory, Multi-Agent, Vector DB, persistent conversation, and public deployment were not implemented.
+
+These are explicit Stage 12E boundaries and non-goals, not defects.
+
+### Stage 12E Disposition
+
+Implementation: COMPLETE
+
+Code-layer MUST FIX: 0
+
+Code-layer SHOULD FIX: 0
+
+PR / merge: COMPLETE
+
+Documentation closeout: COMPLETE

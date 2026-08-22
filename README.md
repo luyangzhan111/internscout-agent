@@ -49,6 +49,8 @@ Stage 11 加入了确定性、可测试的候选人 / 岗位匹配能力：
 - 用户输入候选人技能和意向城市。
 - Demo 通过 FastAPI 调用 Agent，不直接访问 Agent Runtime、数据库或 Matching Service。
 - 页面展示推荐岗位、匹配分数、已匹配技能、缺失技能和 Agent 推荐解释。
+- Demo 默认使用本地 Backend 与 local SQLite 中已有的岗位数据；这些 Demo 数据不是实时招聘网站数据。
+- OPPO real-source ingestion capability 是独立的数据采集能力，不等同于 Demo 默认数据来源。
 
 ## Architecture
 
@@ -131,6 +133,12 @@ Local sample HTML                         OPPO Careers
 
 `POST /api/crawl` 当前仅用于 Mock 采集。真实 OPPO 数据链路通过显式组合调用，尚未暴露为公共 HTTP 采集入口。OPPO source 使用招聘网站的 observed internal endpoints，其 schema 可能发生变化。
 
+准备本地 Demo 数据时，先启动 FastAPI，再调用 `POST /api/crawl`。该 endpoint 使用 `MockJobCrawler` 采集本地 sample HTML 并写入 SQLite，不会抓取实时招聘网站数据：
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
+```
+
 ## Tech Stack
 
 - Python 3.12
@@ -176,6 +184,8 @@ streamlit run demo/app.py
 - **CI**：通过 GitHub Actions 自动执行完整测试回归。
 - **Product Demo**：使用 Streamlit 展示 User → FastAPI → Agent Runtime 的实际产品链路。
 
+Product Demo 当前提供本地运行方式，未部署到公网。
+
 ## Testing
 
 Stage 11 merge 后完整回归基线：
@@ -203,3 +213,4 @@ python -m pytest
 - Agent 每次请求独立运行，不提供持久会话。
 - Tool Calling 当前仅支持顺序执行。
 - 当前没有 retry、partial-success policy、真实 source HTTP trigger 或分布式采集。
+- Product Demo 默认消费 local SQLite / MockJobCrawler 数据，不代表实时招聘网站数据；Demo 未部署到公网。
