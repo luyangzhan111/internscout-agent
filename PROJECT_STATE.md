@@ -21,6 +21,9 @@ InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信�
 - MatchJobsTool 与 deterministic and explainable job matching
 - Agent evaluation layer、offline evaluation runner 与 application composition factory
 - Stage 12E Streamlit Product Demo、Demo HTTP client、Demo-side contracts 与 rendering layer
+- `.env.example`、`INTERNSCOUT_DATABASE_URL` 与本地 / Compose 环境配置边界
+- FastAPI Backend 与 Streamlit Demo 的 Docker images、Docker Compose topology 与 SQLite named volume persistence
+- GitHub Actions 中的 pytest、Docker Compose 配置校验与 Docker image build 校验
 - 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
 
 项目当前不声称具备 multi-source orchestration、production scheduler、real-source HTTP trigger 或 distributed crawling。
@@ -90,11 +93,23 @@ Corresponding merge: Merge pull request #13 from luyangzhan111/feat/stage-12e-pr
 
 Merge commit message: feat: add Streamlit product demo for agent matching
 
+## Stage 13 Integrated Identity
+
+Integrated baseline branch: `main`
+
+Configuration commit: `4403314` — `feat: support configurable database url`
+
+Docker merge commit: `41b871a` — `Merge branch 'feat/stage13-docker'`
+
+CI merge commit: `30614b0` — `Merge branch 'feat/stage13-ci'`
+
+Documentation closeout branch: `feat/stage13-docs`
+
 # 4. Current Stage
 
 ## 已完成阶段
 
-Stage 0 ～ Stage 12E
+Stage 0 ～ Stage 13
 
 ## Stage 10 状态
 
@@ -148,16 +163,34 @@ PR #13 merge: PASS
 MUST FIX: 0
 SHOULD FIX: 0
 
-Authoritative regression:
+Authoritative regression before Stage 13 documentation closeout:
 `python -m pytest -q` => 567 passed
+
+## Stage 13 状态
+
+Implementation: COMPLETE for the integrated configuration, Docker, Compose, and CI changes
+
+Environment configuration: PASS — `.env.example` and `INTERNSCOUT_DATABASE_URL` support are present
+
+Docker capability: PASS — separate Backend and Demo Dockerfiles, Compose services, service networking, and SQLite named volume are present
+
+Docker Compose configuration: PASS — `docker compose config --quiet`
+
+Docker image build: NOT LOCALLY VERIFIED IN THIS DOCUMENTATION CLOSEOUT
+
+CI capability: PRESENT — GitHub Actions defines pytest and Docker validation jobs; an execution result is not recorded here
+
+Public or production deployment: NOT CLAIMED
+
+Documentation closeout: COMPLETE IN WORKING TREE on `feat/stage13-docs`
+
+Stage 13 implementation branches and their integrated commits are recorded above. The documentation branch has not been committed or merged by this task.
 
 ## Next Stage
 
-Stage 13
-
 Specific Goal: UNKNOWN
 
-Stage 13 必须从 repository reality 开始正式 Planning；本快照不猜测 Stage 13 roadmap，也不开始 Stage 13 规划。
+Stage 13 已完成配置、Docker、Compose、CI 与本地部署文档工作；下一阶段尚未定义。
 
 # 5. Implemented Backend Capabilities
 
@@ -300,6 +333,13 @@ Stage 12E decisions：
 - Default Demo data is local SQLite / MockJobCrawler data, not real-time recruiting website data。
 - OPPO real-source ingestion remains a separate capability；`POST /api/crawl` remains MockJobCrawler-specific。
 
+Stage 13 decisions：
+
+- `INTERNSCOUT_DATABASE_URL` is the supported database URL override; the direct local default remains `sqlite:///./internscout.db`。
+- Compose uses `sqlite:////data/internscout.db` in the Backend container and persists `/data` through the `backend_data` named volume。
+- Compose contains two services: `backend` and `demo`；the Demo reaches the Backend through `http://backend:8000` and does not receive DeepSeek secrets。
+- Stage 13 adds local container reproducibility and validation；it does not claim public or production deployment。
+
 # 11. OPPO Source Contract and Defensive Rules
 
 以下是 observed website/internal JSON endpoints，不是 officially supported public developer API：
@@ -323,11 +363,14 @@ source_url 存储 human recruitment page。
 
 Current authoritative baseline：
 
-- Full project: `python -m pytest -q` => 567 passed
-- Post-merge main regression: PASS
-- GitHub Actions CI: PASS
-- Streamlit runtime smoke: PASS
-- Full Demo chain through local SQLite to UI: PASS
+- Stage 13 recorded regression baseline: `python -m pytest -q` => 570 passed
+- Documentation-closeout rerun: environment-blocked after 486 passed and 84 `tmp_path` setup errors caused by Windows `WinError 5` permissions
+- Docker Compose configuration: `docker compose config --quiet` => PASS
+- Docker image build: NOT LOCALLY VERIFIED IN THIS DOCUMENTATION CLOSEOUT
+- Stage 12E post-merge main regression: PASS
+- Stage 12E GitHub Actions CI: PASS
+- Stage 12E Streamlit runtime smoke: PASS
+- Stage 12E full Demo chain through local SQLite to UI: PASS
 - Final Stage 11 Review: PASS；MUST FIX = 0；SHOULD FIX = 0
 - Real Stage 11G Verification: PASS
 
@@ -357,7 +400,7 @@ Real Stage 10 verification：
 
 - Demo 默认使用 local SQLite 中已有岗位数据，不表示实时招聘网站数据。
 - OPPO real-source ingestion capability 与默认 Demo 数据来源不同；OPPO 仍不是 `/api/crawl` 的触发来源。
-- Demo 未部署到公网；Streamlit 与 FastAPI 需要分别在本地运行。
+- Demo 可通过分别运行的 Python 进程或 Docker Compose 在本地运行；未部署到公网或生产环境。
 - Mock HTML remains supported, but OPPO is the first real source。
 - OPPO 使用 observed website/internal JSON endpoints，source schema may change。
 - No production HTTP trigger for real OPPO crawling；/api/crawl remains MockJobCrawler-specific。
@@ -505,7 +548,7 @@ tests/test_stage6_api_flow.py
 
 # 15. Current Documentation and Development Workflow
 
-Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-12e-task.md、docs/tasks/stage-11-task.md、docs/stage-reviews/stage-12-review.md、docs/stage-reviews/stage-11-review.md、docs/development-log.md、docs/codex-workflow.md。
+Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-12e-task.md、docs/tasks/stage-13-task.md、docs/tasks/stage-13-multi-agent-plan.md、docs/stage-reviews/stage-12-review.md、docs/stage-reviews/stage-11-review.md、docs/deployment.md、docs/development-log.md、docs/codex-workflow.md。
 
 长期工作方式：Architecture-First + Codex-Driven Implementation + Human Verification。
 
@@ -515,4 +558,4 @@ Codex Git restrictions remain unchanged：默认禁止 git add、git commit、gi
 
 标准流：formal Planning from repository reality → feature branch → implementation → tests → Final Read-Only Review → Stage Review → Development Log → PR → merge → main regression → PROJECT_STATE → branch cleanup。
 
-Next Stage 为 Stage 13，Specific Goal 为 UNKNOWN；必须先正式 Planning，不得从本快照推断或承诺未来功能。
+Stage 13 documentation closeout is present in the working tree; no subsequent stage or goal has been defined。

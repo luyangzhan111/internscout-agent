@@ -5291,3 +5291,76 @@ Code-layer SHOULD FIX: 0
 PR / merge: COMPLETE
 
 Documentation closeout: COMPLETE
+
+---
+
+## Stage 13D — Documentation Closeout
+
+Date:
+
+2026-08-23
+
+Working branch:
+
+`feat/stage13-docs`
+
+### Stage 13 branches and integrated commits
+
+- Configuration branch: `feat/stage13-config`; integrated configuration commit `4403314` (`feat: support configurable database url`).
+- Docker branch: `feat/stage13-docker`; merge commit `41b871a` (`Merge branch 'feat/stage13-docker'`).
+- CI branch: `feat/stage13-ci`; merge commit `30614b0` (`Merge branch 'feat/stage13-ci'`).
+- Documentation branch: `feat/stage13-docs`; this closeout remains uncommitted and unmerged by this task.
+
+### Agent results
+
+#### Configuration Agent
+
+- Added `.env.example` with safe placeholders.
+- Added `INTERNSCOUT_DATABASE_URL` support.
+- Preserved the direct local SQLite default `sqlite:///./internscout.db`.
+- Documented the Compose database path `sqlite:////data/internscout.db`.
+
+#### Docker Agent
+
+- Added separate `Dockerfile.backend` and `Dockerfile.demo` images.
+- Added a two-service `docker-compose.yml` topology with `backend` and `demo`.
+- Added Backend health checking and Demo-to-Backend service discovery.
+- Added the `backend_data` named volume for SQLite persistence.
+
+#### CI Agent
+
+- Extended `.github/workflows/ci.yml` with Docker Compose configuration validation.
+- Extended CI with `docker compose build` validation.
+- Preserved the Python 3.12 `python -m pytest -q` regression job.
+- Blocking CI remains independent of live DeepSeek credentials and requests.
+
+#### Documentation Agent
+
+- Updated `README.md` for Stage 13, Docker Compose local execution, environment boundaries, persistence, and CI validation.
+- Added `docs/deployment.md` as the local deployment runbook.
+- Updated `PROJECT_STATE.md` with verified Stage 13 identity, architecture, capabilities, limitations, and validation status.
+- Preserved the non-goals: no public production deployment, cloud hosting, RAG, Memory, Multi-Agent runtime, or real-time recruitment system.
+
+### Validation
+
+Recorded Stage 13 regression baseline:
+
+```text
+python -m pytest -q
+570 passed
+```
+
+Documentation-closeout rerun: environment-blocked. The host and workspace-local pytest temporary directories returned Windows `WinError 5` permission errors; the rerun reached 486 passed and 84 `tmp_path` setup errors before collection cleanup failed. This is recorded separately from the 570-pass Stage 13 baseline and is not classified as an application failure.
+
+```text
+docker compose config --quiet
+PASS
+```
+
+Docker image build status:
+
+```text
+NOT RUN / NOT VERIFIED in this documentation closeout
+```
+
+The CI workflow contains `docker compose build`, but no successful build execution result is recorded in this working tree. No Docker runtime smoke or public deployment result is claimed.

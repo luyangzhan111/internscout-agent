@@ -2,7 +2,7 @@
 
 InternScout Agent 是一个基于 Agent Runtime 的智能实习岗位采集与匹配系统，用于演示从岗位数据采集、清洗、持久化和查询，到确定性候选人匹配与大模型工具调用的完整工程链路。
 
-项目当前完成至 Stage 12。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI 和 Product Demo 能力。它以可测试、可解释和边界清晰为目标，保留 Mock 数据链路，并接入 OPPO Careers 作为首个经过验证的真实招聘数据源。
+项目当前完成至 Stage 13。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI 和 Product Demo 能力，Stage 13 增加了环境配置、Docker Compose 本地运行方式和容器构建验证。它以可测试、可解释和边界清晰为目标，保留 Mock 数据链路，并接入 OPPO Careers 作为首个经过验证的真实招聘数据源。
 
 ## 核心能力
 
@@ -14,6 +14,8 @@ InternScout Agent 是一个基于 Agent Runtime 的智能实习岗位采集与�
 - **REST API**：提供健康检查、Mock 采集、岗位列表、岗位详情和 Agent 查询接口。
 - **Agent Runtime**：provider-neutral、request-scoped 的顺序工具调用运行时。
 - **DeepSeek Provider**：通过独立 Provider Adapter 对接 DeepSeek API，由 Agent Runtime 使用工具结果生成回答。
+- **Docker Compose**：使用独立 Backend 与 Streamlit Demo 容器提供可复现的本地运行方式，并通过 named volume 持久化 SQLite。
+- **CI validation**：GitHub Actions 执行 pytest、Docker Compose 配置校验和 Docker 镜像构建校验。
 
 ## Agent Layer
 
@@ -49,8 +51,10 @@ Stage 11 加入了确定性、可测试的候选人 / 岗位匹配能力：
 - 用户输入候选人技能和意向城市。
 - Demo 通过 FastAPI 调用 Agent，不直接访问 Agent Runtime、数据库或 Matching Service。
 - 页面展示推荐岗位、匹配分数、已匹配技能、缺失技能和 Agent 推荐解释。
-- Demo 默认使用本地 Backend 与 local SQLite 中已有的岗位数据；这些 Demo 数据不是实时招聘网站数据。
+- Demo 在 local Python development mode 下通过 `http://127.0.0.1:8000` 调用单独运行的 Backend；在 Docker Compose local mode 下通过 Compose 网络中的 `http://backend:8000` 调用 Backend。
+- 两种模式都使用本地 SQLite / MockJobCrawler 数据；这些 Demo 数据不是实时招聘网站数据。
 - OPPO real-source ingestion capability 是独立的数据采集能力，不等同于 Demo 默认数据来源。
+- 项目提供本地 Docker Compose 运行方式，但没有 public production deployment。
 
 ## Architecture
 
@@ -173,7 +177,31 @@ python -m uvicorn app.main:app --reload
 streamlit run demo/app.py
 ```
 
-使用真实 DeepSeek Provider 前，需要配置 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL`。不要把 API key 写入代码或提交到仓库。
+使用真实 DeepSeek Provider 前，需要将 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL` 注入当前进程。直接运行 Python 时不会自动加载 `.env` 文件；Docker Compose 会读取项目根目录的 `.env`。
+
+## Docker Compose Deployment
+
+Docker Compose 提供 Backend 与 Streamlit Demo 的本地容器运行方式。需要安装 Docker Engine 与 Docker Compose plugin，并准备一个不包含真实密钥的 `.env` 配置文件：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+编辑 `.env` 后，可先校验 Compose 配置，再构建并启动服务：
+
+```powershell
+docker compose config --quiet
+docker compose up --build
+```
+
+访问地址：
+
+- FastAPI Backend：`http://127.0.0.1:8000`
+- Streamlit Demo：`http://127.0.0.1:8501`
+
+Backend 启动时会自动创建缺失的 SQLite 表。Compose 使用 `backend_data` named volume 保存 `/data/internscout.db`，因此普通 `docker compose down` 不会删除数据库数据；`docker compose down -v` 会删除该 volume。
+
+完整的环境变量、启动、停止、数据初始化和故障排查说明见 [`docs/deployment.md`](docs/deployment.md)。
 
 ## Project Highlights
 
@@ -181,10 +209,10 @@ streamlit run demo/app.py
 - **Tool Calling**：通过 ToolRegistry 连接岗位查询、岗位详情和匹配能力。
 - **Deterministic Matching**：提供稳定、可测试、可解释的匹配分数和技能分析。
 - **Evaluation Framework**：使用离线、确定性的评估场景验证 Agent 行为。
-- **CI**：通过 GitHub Actions 自动执行完整测试回归。
+- **CI**：通过 GitHub Actions 自动执行 pytest 回归、`docker compose config` 配置校验和 Docker 镜像构建校验；阻塞 CI 不依赖实时 DeepSeek 调用。
 - **Product Demo**：使用 Streamlit 展示 User → FastAPI → Agent Runtime 的实际产品链路。
 
-Product Demo 当前提供本地运行方式，未部署到公网。
+Product Demo 当前支持单独 Python 进程和 Docker Compose 两种本地运行方式，未部署到公网或生产环境。
 
 ## Testing
 
@@ -193,9 +221,9 @@ Stage 11 merge 后完整回归基线：
 - **503 passed**
 - **0 warnings**
 
-Stage 12 当前完整回归基线：
+Stage 13 当前完整回归基线：
 
-- **567 passed**
+- **570 passed**
 
 运行测试：
 
@@ -213,4 +241,4 @@ python -m pytest
 - Agent 每次请求独立运行，不提供持久会话。
 - Tool Calling 当前仅支持顺序执行。
 - 当前没有 retry、partial-success policy、真实 source HTTP trigger 或分布式采集。
-- Product Demo 默认消费 local SQLite / MockJobCrawler 数据，不代表实时招聘网站数据；Demo 未部署到公网。
+- Product Demo 默认消费 local SQLite / MockJobCrawler 数据，不代表实时招聘网站数据；Demo 可通过 Python 或 Docker Compose 在本地运行，但未部署到公网或生产环境。
