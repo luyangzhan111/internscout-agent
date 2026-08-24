@@ -1,20 +1,31 @@
 # InternScout Agent
 
-InternScout Agent 是一个基于 Agent Runtime 的智能实习岗位采集与匹配系统，用于演示从岗位数据采集、清洗、持久化和查询，到确定性候选人匹配与大模型工具调用的完整工程链路。
+> An AI Agent application for internship discovery, job data processing, and candidate-job matching.
+>
+> Release target: **v1.0.0**
 
-项目当前完成至 Stage 13。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI 和 Product Demo 能力，Stage 13 增加了环境配置、Docker Compose 本地运行方式和容器构建验证。它以可测试、可解释和边界清晰为目标，保留 Mock 数据链路，并接入 OPPO Careers 作为首个经过验证的真实招聘数据源。
+## Project Overview
 
-## 核心能力
+InternScout Agent 不是一个普通的爬虫脚本，而是一个把岗位数据 pipeline 作为基础能力、再由 Agent Runtime 完成查询、工具调用与候选人匹配的 AI Agent 应用。项目展示了从 internship crawling pipeline、数据清洗与标准化，到 FastAPI backend、Agent orchestration、tool calling、candidate-job matching、agent evaluation、Docker deployment 和 CI validation 的完整工程链路。
 
-- **Job data pipeline**：岗位采集、领域映射、清洗、去重、持久化与查询的完整链路。
+项目当前完成至 Stage 13。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI validation 和 Product Demo 能力，Stage 13 增加了环境配置、Docker Compose 本地运行方式、Product Demo、CI validation 和 release preparation。完成 OPPO Careers 数据源适配验证。
+
+项目当前定位为可复现、可测试、可解释的本地产品原型与公开 portfolio 项目。默认 Demo 使用本地 SQLite 和 Mock 数据；OPPO Careers 数据源适配验证能力，不代表 Demo 默认读取实时招聘网站。
+
+## Features
+
+- **Internship crawling pipeline**：岗位采集、领域映射、处理、去重、持久化与查询的完整链路。
 - **MockJobCrawler**：从本地 sample HTML 读取岗位，支持稳定、离线的开发和测试。
 - **OPPO Careers real source**：通过 `OppoJobSourceClient` 与 `OppoJobCrawler` 接入 OPPO Careers 的岗位发现和详情数据。
-- **Cleaning**：规范化岗位字段、城市和技能数据，并在写入前执行去重。
+- **Data cleaning and normalization**：规范化公司、城市和技能字段，并在写入前执行去重。
 - **SQLite persistence**：通过 Repository 与 SQLAlchemy 将岗位持久化到 SQLite。
-- **REST API**：提供健康检查、Mock 采集、岗位列表、岗位详情和 Agent 查询接口。
-- **Agent Runtime**：provider-neutral、request-scoped 的顺序工具调用运行时。
+- **FastAPI backend**：提供健康检查、Mock 采集、岗位列表、岗位详情和 Agent 查询接口。
+- **Agent orchestration**：provider-neutral、request-scoped 的顺序工具调用运行时。
+- **Tool calling**：通过 `ToolRegistry` 暴露岗位搜索、岗位详情和候选人匹配工具。
+- **Candidate-job matching**：确定性、可解释的匹配分数、已匹配技能、缺失技能、城市过滤和稳定排序。
+- **Agent evaluation**：离线、确定性的 evaluation dataset、runner 和 scorers，用于验证工具选择、参数、结果和回答事实。
 - **DeepSeek Provider**：通过独立 Provider Adapter 对接 DeepSeek API，由 Agent Runtime 使用工具结果生成回答。
-- **Docker Compose**：使用独立 Backend 与 Streamlit Demo 容器提供可复现的本地运行方式，并通过 named volume 持久化 SQLite。
+- **Docker deployment**：使用独立 Backend 与 Streamlit Demo 容器提供可复现的 Docker Compose 本地部署方式，并通过 named volume 持久化 SQLite。
 - **CI validation**：GitHub Actions 执行 pytest、Docker Compose 配置校验和 Docker 镜像构建校验。
 
 ## Agent Layer
@@ -179,7 +190,7 @@ streamlit run demo/app.py
 
 使用真实 DeepSeek Provider 前，需要将 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL` 注入当前进程。直接运行 Python 时不会自动加载 `.env` 文件；Docker Compose 会读取项目根目录的 `.env`。
 
-## Docker Compose Deployment
+## Quick Start (Docker Compose)
 
 Docker Compose 提供 Backend 与 Streamlit Demo 的本地容器运行方式。需要安装 Docker Engine 与 Docker Compose plugin，并准备一个不包含真实密钥的 `.env` 配置文件：
 
@@ -192,6 +203,12 @@ Copy-Item .env.example .env
 ```powershell
 docker compose config --quiet
 docker compose up --build
+```
+
+容器启动后，在另一个终端初始化本地 Demo 岗位数据：
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
 ```
 
 访问地址：
@@ -216,22 +233,22 @@ Product Demo 当前支持单独 Python 进程和 Docker Compose 两种本地运�
 
 ## Testing
 
-Stage 11 merge 后完整回归基线：
-
-- **503 passed**
-- **0 warnings**
-
-Stage 13 当前完整回归基线：
+当前 Stage 13 完整回归基线：
 
 - **570 passed**
 
 运行测试：
 
 ```powershell
-python -m pytest
+python -m pytest -q
 ```
 
-自动化测试保持离线，不依赖真实 OPPO 或 DeepSeek 网络请求。
+测试保持离线，不依赖真实 OPPO 或 DeepSeek 网络请求。GitHub Actions 还会独立执行 Docker Compose 配置和镜像构建校验。
+
+历史回归基线：
+
+- **503 passed**
+- **0 warnings**
 
 ## Current Boundaries
 

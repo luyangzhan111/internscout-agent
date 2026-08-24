@@ -65,9 +65,9 @@ Stage 12 merge commit: d77bbc3
 
 Stage 12 merge commit full hash: d77bbc391613c886bffdd04ce522e4937451e117
 
-Working tree before PROJECT_STATE update: clean
+Documentation snapshot: README.md and PROJECT_STATE.md are being updated for the v1.0.0 portfolio release.
 
-Post-merge full regression: 567 passed
+Stage 13 regression baseline: 570 passed
 
 Stage 11 merge identity e3b9b6c remains historical. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
 
@@ -103,7 +103,16 @@ Docker merge commit: `41b871a` — `Merge branch 'feat/stage13-docker'`
 
 CI merge commit: `30614b0` — `Merge branch 'feat/stage13-ci'`
 
-Documentation closeout branch: `feat/stage13-docs`
+Documentation closeout commit:
+b2d8360
+
+## v1.0.0 Release Target
+
+Version target: `v1.0.0`
+
+Release documentation status: COMPLETE IN WORKING TREE
+
+The version target describes the public portfolio release milestone; it does not claim that a Git tag or GitHub Release has already been created.
 
 # 4. Current Stage
 
@@ -170,27 +179,33 @@ Authoritative regression before Stage 13 documentation closeout:
 
 Implementation: COMPLETE for the integrated configuration, Docker, Compose, and CI changes
 
+Docker deployment: COMPLETE — Backend and Streamlit Demo images, Docker Compose service topology, service networking, and SQLite named-volume persistence are implemented for local deployment.
+
 Environment configuration: PASS — `.env.example` and `INTERNSCOUT_DATABASE_URL` support are present
 
 Docker capability: PASS — separate Backend and Demo Dockerfiles, Compose services, service networking, and SQLite named volume are present
 
 Docker Compose configuration: PASS — `docker compose config --quiet`
 
-Docker image build: NOT LOCALLY VERIFIED IN THIS DOCUMENTATION CLOSEOUT
+Docker image build validation: COMPLETE IN CI CONFIGURATION — the workflow runs `docker compose build`; this documentation closeout does not claim an additional local engine run.
 
-CI capability: PRESENT — GitHub Actions defines pytest and Docker validation jobs; an execution result is not recorded here
+CI validation: COMPLETE — GitHub Actions defines independent Python test and Docker validation jobs, including pytest, Compose configuration validation, and Docker image build validation.
+
+Test status: PASS — `python -m pytest -q` => 570 passed
+
+Current project status: STAGE 13 COMPLETE / v1.0.0 PORTFOLIO RELEASE DOCUMENTATION READY
 
 Public or production deployment: NOT CLAIMED
 
-Documentation closeout: COMPLETE IN WORKING TREE on `feat/stage13-docs`
+Documentation closeout: COMPLETE IN WORKING TREE on main
 
-Stage 13 implementation branches and their integrated commits are recorded above. The documentation branch has not been committed or merged by this task.
+Stage 13 implementation branches and their integrated commits are recorded above. The documentation updates in this task remain uncommitted and unpushed.
 
 ## Next Stage
 
 Specific Goal: UNKNOWN
 
-Stage 13 已完成配置、Docker、Compose、CI 与本地部署文档工作；下一阶段尚未定义。
+Stage 13 已完成配置、Docker、Compose、CI 与本地部署文档工作；v1.0.0 portfolio release documentation is ready in the working tree；下一阶段尚未定义。
 
 # 5. Implemented Backend Capabilities
 
@@ -361,12 +376,13 @@ source_url 存储 human recruitment page。
 
 # 12. Automated Testing, Review, and Real Verification
 
-Current authoritative baseline：
+Authoritative baseline:
+570 passed
 
-- Stage 13 recorded regression baseline: `python -m pytest -q` => 570 passed
-- Documentation-closeout rerun: environment-blocked after 486 passed and 84 `tmp_path` setup errors caused by Windows `WinError 5` permissions
+Note:
+Later documentation-only rerun was blocked by local Windows permission issue and is not considered the project regression baseline.
 - Docker Compose configuration: `docker compose config --quiet` => PASS
-- Docker image build: NOT LOCALLY VERIFIED IN THIS DOCUMENTATION CLOSEOUT
+- Docker image build validation: defined in GitHub Actions through `docker compose build`; no additional local engine result is claimed here
 - Stage 12E post-merge main regression: PASS
 - Stage 12E GitHub Actions CI: PASS
 - Stage 12E Streamlit runtime smoke: PASS
