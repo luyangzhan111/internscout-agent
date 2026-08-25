@@ -8,7 +8,7 @@
 
 InternScout Agent 不是一个普通的爬虫脚本，而是一个把岗位数据 pipeline 作为基础能力、再由 Agent Runtime 完成查询、工具调用与候选人匹配的 AI Agent 应用。项目展示了从 internship crawling pipeline、数据清洗与标准化，到 FastAPI backend、Agent orchestration、tool calling、candidate-job matching、agent evaluation、Docker deployment 和 CI validation 的完整工程链路。
 
-项目当前完成至 Stage 13。此前 Stage 11 已完成确定性候选人 / 岗位匹配能力，Stage 12 进一步完成了 Agent Evaluation、CI validation 和 Product Demo 能力，Stage 13 增加了环境配置、Docker Compose 本地运行方式、Product Demo、CI validation 和 release preparation。完成 OPPO Careers 数据源适配验证。
+项目当前完成至 Stage 13。Stage 11 完成确定性候选人 / 岗位匹配能力，Stage 12 完成 Agent Evaluation 与 CI validation，Stage 13 完成 Docker Compose 本地部署、Product Demo 与 release preparation，并完成 OPPO Careers 数据源适配验证。
 
 项目当前定位为可复现、可测试、可解释的本地产品原型与公开 portfolio 项目。默认 Demo 使用本地 SQLite 和 Mock 数据；OPPO Careers 数据源适配验证能力，不代表 Demo 默认读取实时招聘网站。
 
@@ -146,7 +146,7 @@ Local sample HTML                         OPPO Careers
 - `GET /api/jobs/{job_id}`：获取岗位详情。
 - `POST /api/agent/query`：触发一次独立的 Agent run。
 
-`POST /api/crawl` 当前仅用于 Mock 采集。真实 OPPO 数据链路通过显式组合调用，尚未暴露为公共 HTTP 采集入口。OPPO source 使用招聘网站的 observed internal endpoints，其 schema 可能发生变化。
+`POST /api/crawl` 当前仅用于 Mock 采集。真实 OPPO 数据链路通过显式组合调用，尚未暴露为公共 HTTP 采集入口。OPPO source 使用招聘网站观察到的内部接口，其 schema 可能发生变化。
 
 准备本地 Demo 数据时，先启动 FastAPI，再调用 `POST /api/crawl`。该 endpoint 使用 `MockJobCrawler` 采集本地 sample HTML 并写入 SQLite，不会抓取实时招聘网站数据：
 
@@ -249,6 +249,8 @@ python -m pytest -q
 
 - **503 passed**
 - **0 warnings**
+
+503 passed 为 Stage 12 merge 前历史回归基线，570 passed 为 v1.0.0 release baseline。
 
 ## Current Boundaries
 
