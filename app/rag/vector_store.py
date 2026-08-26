@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from math import sqrt
 
-from app.rag.contracts import JobDocument
+from app.rag.contracts import JobDocument, VectorSearchResult
 
 
 class VectorStore(ABC):
@@ -18,8 +18,8 @@ class VectorStore(ABC):
         self,
         query_embedding: list[float],
         top_k: int,
-    ) -> list[JobDocument]:
-        """Return the documents most similar to a query embedding."""
+    ) -> list[VectorSearchResult]:
+        """Return ranked documents with their similarity scores."""
 
 
 class InMemoryVectorStore(VectorStore):
@@ -39,7 +39,7 @@ class InMemoryVectorStore(VectorStore):
         self,
         query_embedding: list[float],
         top_k: int,
-    ) -> list[JobDocument]:
+    ) -> list[VectorSearchResult]:
         """Rank stored documents by descending cosine similarity."""
 
         if top_k <= 0 or not self._entries:
@@ -62,8 +62,11 @@ class InMemoryVectorStore(VectorStore):
 
         ranked.sort(key=lambda item: (-item[0], item[1]))
         return [
-            document.model_copy(deep=True)
-            for _, _, document in ranked[:top_k]
+            VectorSearchResult(
+                document=document.model_copy(deep=True),
+                score=score,
+            )
+            for score, _, document in ranked[:top_k]
         ]
 
     @staticmethod

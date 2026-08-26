@@ -11,3 +11,21 @@ class JobDocument(BaseModel):
     id: int
     content: str
     metadata: dict[str, str | int]
+
+
+class VectorSearchResult(BaseModel):
+    """A vector-store hit together with its similarity score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document: JobDocument
+    score: float
+
+
+class RetrievalResult(BaseModel):
+    """A retrieved document together with its similarity score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document: JobDocument
+    score: float
