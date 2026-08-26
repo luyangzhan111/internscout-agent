@@ -11,6 +11,7 @@ from app.api import (
     health_router,
     jobs_router,
 )
+from app.api.dependencies import create_retrieval_runtime
 from app.database import (
     database_engine,
     init_database,
@@ -30,6 +31,7 @@ async def lifespan(
     )
 
     init_database(engine)
+    app.state.retrieval_runtime = create_retrieval_runtime()
 
     yield
 

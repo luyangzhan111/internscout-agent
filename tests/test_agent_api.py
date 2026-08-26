@@ -18,7 +18,11 @@ from app.agent.contracts import (
     ToolCallResponse,
 )
 from app.agent.model_client import ModelClient
-from app.api.dependencies import get_model_client
+from app.api.dependencies import (
+    create_retrieval_runtime,
+    get_model_client,
+    get_retrieval_runtime,
+)
 from app.database import (
     create_database_engine,
     create_session_factory,
@@ -26,6 +30,8 @@ from app.database import (
     save_jobs,
 )
 from app.main import app
+from app.rag.embedding import EmbeddingProvider, FakeEmbeddingProvider
+from app.rag.runtime import RetrievalRuntime
 from app.schemas.job import JobCreate
 from app.services import process_jobs
 from tests.agent.fakes.fake_model_client import FakeModelClient
@@ -133,6 +139,55 @@ def override_model_client(
             app.dependency_overrides[get_model_client] = previous
 
 
+@contextmanager
+def override_retrieval_runtime(
+    runtime: RetrievalRuntime | None,
+) -> Generator[None, None, None]:
+    """Override the application retrieval runtime for one test."""
+
+    previous = app.dependency_overrides.get(
+        get_retrieval_runtime,
+        _MISSING,
+    )
+    app.dependency_overrides[get_retrieval_runtime] = (
+        lambda: runtime
+    )
+
+    try:
+        yield
+    finally:
+        if previous is _MISSING:
+            app.dependency_overrides.pop(
+                get_retrieval_runtime,
+                None,
+            )
+        else:
+            app.dependency_overrides[get_retrieval_runtime] = previous
+
+
+class FailingEmbeddingProvider(EmbeddingProvider):
+    """Test-local provider that never performs a network request."""
+
+    def embed(self, text: str) -> list[float]:
+        raise RuntimeError("embedding failed")
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("embedding failed")
+
+
+class ToggleEmbeddingProvider(FakeEmbeddingProvider):
+    """Fail only refresh batches after an old index has been built."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_batch = False
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if self.fail_batch:
+            raise RuntimeError("refresh embedding failed")
+        return super().embed_batch(texts)
+
+
 def seed_jobs(
     session_factory: sessionmaker[Session],
     *jobs: JobCreate,
@@ -185,6 +240,239 @@ def test_agent_query_returns_direct_final_answer(
         "steps": 1,
         "tool_execution_count": 0,
     }
+
+
+def test_missing_embedding_configuration_disables_only_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    monkeypatch.delenv("INTERNSCOUT_EMBEDDING_API_KEY", raising=False)
+    monkeypatch.delenv("INTERNSCOUT_EMBEDDING_BASE_URL", raising=False)
+
+    assert create_retrieval_runtime() is None
+
+    client, _ = agent_api_client
+    fake_model = FakeModelClient(
+        responses=[FinalAnswerResponse(answer="核心能力正常。")]
+    )
+
+    with override_retrieval_runtime(None):
+        with override_model_client(fake_model):
+            response = client.post(
+                "/api/agent/query",
+                json={"user_message": "查询岗位"},
+            )
+
+    assert response.status_code == 200
+    assert [
+        definition.name
+        for definition in fake_model.requests[0].tools
+    ] == [
+        "search_jobs",
+        "get_job_detail",
+        "match_jobs",
+    ]
+
+
+def test_configured_retrieval_runtime_is_created_without_embedding_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("INTERNSCOUT_EMBEDDING_API_KEY", "test-key")
+    monkeypatch.setenv(
+        "INTERNSCOUT_EMBEDDING_BASE_URL",
+        "https://example.com/embeddings",
+    )
+    monkeypatch.setenv("INTERNSCOUT_EMBEDDING_MODEL", "test-model")
+    monkeypatch.setenv("INTERNSCOUT_EMBEDDING_DIMENSIONS", "8")
+
+    runtime = create_retrieval_runtime()
+
+    assert isinstance(runtime, RetrievalRuntime)
+    assert runtime.current_retriever is None
+    assert runtime.is_dirty is True
+
+
+def test_agent_retrieval_lazily_builds_and_reuses_clean_index(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, session_factory = agent_api_client
+    seed_jobs(
+        session_factory,
+        create_job(source_url="https://example.com/retrieval/1"),
+        create_job(
+            title="Data Intern",
+            source_url="https://example.com/retrieval/2",
+        ),
+    )
+    runtime = RetrievalRuntime(
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    first_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="retrieve_001",
+                tool_name="retrieve_job_knowledge",
+                arguments={"query": "Python", "top_k": 5},
+            ),
+            FinalAnswerResponse(answer="已检索岗位。"),
+        ]
+    )
+
+    with override_retrieval_runtime(runtime):
+        with override_model_client(first_model):
+            first_response = client.post(
+                "/api/agent/query",
+                json={"user_message": "检索 Python 岗位"},
+            )
+
+        assert first_response.status_code == 200
+        assert runtime.is_ready is True
+        assert runtime.is_dirty is False
+        assert first_model.requests[0].tools[-1].name == (
+            "retrieve_job_knowledge"
+        )
+        assert first_model.requests[1].tool_executions[0].result.success is True
+
+        def unexpected_query(*args: object, **kwargs: object) -> object:
+            raise AssertionError("clean retrieval index re-collected jobs")
+
+        monkeypatch.setattr(
+            "app.api.dependencies.RepositoryJobQueryAdapter.search_jobs",
+            unexpected_query,
+        )
+        second_model = FakeModelClient(
+            responses=[FinalAnswerResponse(answer="复用已建索引。")]
+        )
+        with override_model_client(second_model):
+            second_response = client.post(
+                "/api/agent/query",
+                json={"user_message": "继续处理"},
+            )
+
+    assert second_response.status_code == 200
+
+
+def test_agent_retrieval_empty_database_builds_ready_empty_index(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, _ = agent_api_client
+    runtime = RetrievalRuntime(
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    fake_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="retrieve_empty_001",
+                tool_name="retrieve_job_knowledge",
+                arguments={"query": "Python"},
+            ),
+            FinalAnswerResponse(answer="没有岗位。"),
+        ]
+    )
+
+    with override_retrieval_runtime(runtime):
+        with override_model_client(fake_model):
+            response = client.post(
+                "/api/agent/query",
+                json={"user_message": "检索岗位"},
+            )
+
+    assert response.status_code == 200
+    assert runtime.is_ready is True
+    assert fake_model.requests[1].tool_executions[0].result.data == []
+
+
+def test_agent_first_retrieval_build_failure_disables_only_retrieval(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, session_factory = agent_api_client
+    seed_jobs(
+        session_factory,
+        create_job(source_url="https://example.com/retrieval/failure"),
+    )
+    runtime = RetrievalRuntime(
+        embedding_provider=FailingEmbeddingProvider(),
+    )
+    fake_model = FakeModelClient(
+        responses=[FinalAnswerResponse(answer="核心工具仍可用。")]
+    )
+
+    with override_retrieval_runtime(runtime):
+        with override_model_client(fake_model):
+            response = client.post(
+                "/api/agent/query",
+                json={"user_message": "查询岗位"},
+            )
+
+    assert response.status_code == 200
+    assert runtime.current_retriever is None
+    assert runtime.is_dirty is True
+    assert [
+        definition.name
+        for definition in fake_model.requests[0].tools
+    ] == [
+        "search_jobs",
+        "get_job_detail",
+        "match_jobs",
+    ]
+
+
+def test_agent_refresh_failure_falls_back_to_old_retriever(
+    agent_api_client: tuple[TestClient, sessionmaker[Session]],
+) -> None:
+    client, session_factory = agent_api_client
+    seed_jobs(
+        session_factory,
+        create_job(source_url="https://example.com/retrieval/old"),
+    )
+    provider = ToggleEmbeddingProvider()
+    runtime = RetrievalRuntime(
+        embedding_provider=provider,
+    )
+    first_model = FakeModelClient(
+        responses=[
+            tool_call(
+                call_id="retrieve_old_001",
+                tool_name="retrieve_job_knowledge",
+                arguments={"query": "Python"},
+            ),
+            FinalAnswerResponse(answer="旧索引已建立。"),
+        ]
+    )
+
+    with override_retrieval_runtime(runtime):
+        with override_model_client(first_model):
+            first_response = client.post(
+                "/api/agent/query",
+                json={"user_message": "建立检索索引"},
+            )
+
+        assert first_response.status_code == 200
+        old_retriever = runtime.current_retriever
+        provider.fail_batch = True
+        runtime.mark_dirty()
+
+        second_model = FakeModelClient(
+            responses=[
+                tool_call(
+                    call_id="retrieve_old_002",
+                    tool_name="retrieve_job_knowledge",
+                    arguments={"query": "Python"},
+                ),
+                FinalAnswerResponse(answer="继续使用旧索引。"),
+            ]
+        )
+        with override_model_client(second_model):
+            second_response = client.post(
+                "/api/agent/query",
+                json={"user_message": "再次检索岗位"},
+            )
+
+    assert second_response.status_code == 200
+    assert runtime.current_retriever is old_retriever
+    assert runtime.is_dirty is True
+    assert second_model.requests[1].tool_executions[0].result.success is True
 
 
 def test_agent_query_searches_jobs_through_real_database_path(
