@@ -123,12 +123,6 @@ class DeepSeekModelClient(ModelClient):
             if getattr(item, "type", None) == "function_call"
         ]
 
-        if len(function_calls) > 1:
-            raise ValueError(
-                "DeepSeek response contains multiple function calls; "
-                "parallel tool calling is not supported."
-            )
-
         if function_calls:
             output_items = getattr(response, "output", []) or []
             message_items = [
@@ -160,6 +154,7 @@ class DeepSeekModelClient(ModelClient):
                         "a final answer."
                     )
 
+            # Project the provider-order first call; the next sequential turn re-plans.
             call = function_calls[0]
             arguments = json.loads(call.arguments)
             if not isinstance(arguments, dict):
