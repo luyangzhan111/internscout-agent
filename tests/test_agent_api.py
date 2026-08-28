@@ -61,8 +61,26 @@ def create_job(**overrides: object) -> JobCreate:
 @pytest.fixture
 def agent_api_client(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Generator[tuple[TestClient, sessionmaker[Session]], None, None]:
     """Provide a TestClient and session factory bound to one temp database."""
+
+    monkeypatch.delenv(
+        "INTERNSCOUT_EMBEDDING_API_KEY",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "INTERNSCOUT_EMBEDDING_BASE_URL",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "INTERNSCOUT_EMBEDDING_MODEL",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "INTERNSCOUT_EMBEDDING_DIMENSIONS",
+        raising=False,
+    )
 
     database_path = tmp_path / "agent-api-test.db"
     engine = create_database_engine(
