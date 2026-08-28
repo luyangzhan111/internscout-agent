@@ -99,6 +99,7 @@ class EvalCase(BaseModel):
         "get_job_detail",
         "match_jobs",
         "failure",
+        "retrieval",
     ]
     description: str = Field(min_length=1)
     user_message: str = Field(min_length=1)

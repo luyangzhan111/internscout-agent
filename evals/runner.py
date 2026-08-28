@@ -10,6 +10,7 @@ from pathlib import Path
 from app.agent.composition import create_agent_orchestrator
 from app.agent.model_client import ModelClient
 from app.agent.tools.job_query import JobQueryPort
+from app.rag.retriever import JobKnowledgeRetriever
 
 from evals.contracts import (
     EvalCase,
@@ -21,6 +22,10 @@ from evals.dataset import DEFAULT_DATASET_PATH, load_eval_cases
 
 ModelClientFactory = Callable[[EvalCase], ModelClient]
 JobQueryFactory = Callable[[EvalCase], JobQueryPort]
+JobRetrieverFactory = Callable[
+    [EvalCase],
+    JobKnowledgeRetriever | None,
+]
 
 
 class EvaluationRunner:
@@ -31,6 +36,7 @@ class EvaluationRunner:
         model_client_factory: ModelClientFactory,
         job_query_factory: JobQueryFactory,
         max_steps: int = 5,
+        job_retriever_factory: JobRetrieverFactory | None = None,
     ) -> None:
         if max_steps < 1:
             raise ValueError(
@@ -40,6 +46,7 @@ class EvaluationRunner:
         self._model_client_factory = model_client_factory
         self._job_query_factory = job_query_factory
         self._max_steps = max_steps
+        self._job_retriever_factory = job_retriever_factory
 
     def run_case(
         self,
@@ -49,10 +56,16 @@ class EvaluationRunner:
 
         model_client = self._model_client_factory(case)
         job_query = self._job_query_factory(case)
+        retriever = (
+            self._job_retriever_factory(case)
+            if self._job_retriever_factory is not None
+            else None
+        )
         orchestrator = create_agent_orchestrator(
             model_client=model_client,
             job_query=job_query,
             max_steps=self._max_steps,
+            job_retriever=retriever,
         )
 
         try:
