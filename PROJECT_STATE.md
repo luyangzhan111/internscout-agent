@@ -25,7 +25,7 @@ job ingestion
 - Released/tagged baseline: `v1.0.0`（tag 已存在并保持冻结）。
 - Current development target: `v1.1.0`。
 - Current branch: `feat/stage13.5-rag`。
-- Current snapshot HEAD: `455eb3c7c33e9a396f87194e780ee99074583d7b`。
+- Implementation / review baseline: `60ed735`（Stage 13.5 implementation 与 H-D documentation 已完成）。
 - `v1.1.0` tag 尚未创建，GitHub Release 尚未创建，PR/merge 尚未发生。
 - FastAPI application metadata version 仍为 `0.1.0`；本次 snapshot 更新不修改 production code。
 
@@ -37,13 +37,15 @@ job ingestion
 - Stage 13.5H: closeout in progress。
   - H-A: complete。
   - H-B: complete + committed。
-  - H-C: current / PROJECT_STATE snapshot update in progress。
+  - H-C: complete。
+  - H-D: complete。
+  - H-E: release-readiness validation / final closeout review in progress。
+  - H-F: pending。
 
-Current next-stage target:
+Current closeout target:
 
-1. Stage 13.5H-D: Stage Review + Development Log。
-2. H-E: Final Regression / Final Review。
-3. H-F: PR / merge / `v1.1.0` tag and release closeout。
+1. H-E: release-readiness validation / final closeout review。
+2. H-F: PR / merge / `v1.1.0` tag and release closeout。
 
 当前不声称 Stage 13.5 fully released，也不声称 `v1.1.0` 已发布。
 
@@ -249,6 +251,7 @@ Current verified Stage 13.5G evidence：
 - `tests/evaluation`: 95 passed。
 - `tests/agent`: 139 passed。
 - `tests/rag`: 58 passed。
+- `tests/test_agent_api.py`: 22 passed。
 - Full suite: `710 passed in 16.64s`。
 
 Full-suite evidence 使用 fresh external basetemp，以绕过本机历史 pytest temp ACL 问题。该 Windows `WinError 5` 属于环境权限噪声，不是当前产品 test failure。当前 baseline 是 `710 passed`；旧的 `570 passed` 不再作为 current baseline。
@@ -319,9 +322,9 @@ Current documentation state：
 
 - README Stage 13.5 updated。
 - `docs/deployment.md` Stage 13.5 updated。
-- `PROJECT_STATE.md` is being updated in H-C。
-- Stage 13.5 review 尚未创建（属于 H-D）。
-- `docs/development-log.md` 尚未追加 Stage 13.5（属于 H-D）。
+- `PROJECT_STATE.md` is the current snapshot。
+- `docs/stage-reviews/stage-13.5-review.md` exists and is complete。
+- `docs/development-log.md` has the Stage 13.5 milestone appended。
 
 ## 12. Long-term Engineering Constraints
 
