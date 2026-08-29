@@ -28,7 +28,8 @@
         "search_jobs",
         "get_job_detail",
         "match_jobs",
-        "failure"
+        "failure",
+        "retrieval"
       ]
     },
     "description": {

@@ -8,16 +8,19 @@ from app.agent.tools.job_tools import (
     SearchJobsTool,
 )
 from app.agent.tools.matching_tool import MatchJobsTool
+from app.agent.tools.retrieval_tool import RetrieveJobKnowledgeTool
 from app.agent.tools.registry import ToolRegistry
 from app.matching.matcher import CandidateMatcher
 from app.matching.service import JobMatchingService
 from app.matching.skill_extractor import JobSkillExtractor
+from app.rag.retriever import JobKnowledgeRetriever
 
 
 def create_agent_orchestrator(
     model_client: ModelClient,
     job_query: JobQueryPort,
     max_steps: int = 5,
+    job_retriever: JobKnowledgeRetriever | None = None,
 ) -> AgentOrchestrator:
     """Create one request-scoped Agent Runtime object graph."""
 
@@ -39,6 +42,12 @@ def create_agent_orchestrator(
             matching_service=matching_service
         )
     )
+    if job_retriever is not None:
+        tool_registry.register(
+            RetrieveJobKnowledgeTool(
+                retriever=job_retriever
+            )
+        )
 
     return AgentOrchestrator(
         model_client=model_client,

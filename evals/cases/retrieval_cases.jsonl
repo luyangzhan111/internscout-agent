@@ -1,0 +1,6 @@
+{"schema_version":1,"case_id":"retrieval_ai_rag","description":"Find an AI application role involving Agent, RAG, and tool calling.","query":"大模型 Agent RAG 工具调用实习岗位","top_k":3,"expected_job_id":5}
+{"schema_version":1,"case_id":"retrieval_backend_api","description":"Find a Python backend role focused on APIs and databases.","query":"Python FastAPI 后端接口 数据库实习岗位","top_k":3,"expected_job_id":1}
+{"schema_version":1,"case_id":"retrieval_automated_testing","description":"Find an automation testing role using Pytest for API tests.","query":"Pytest 接口自动化测试实习岗位","top_k":3,"expected_job_id":2}
+{"schema_version":1,"case_id":"retrieval_data_crawling","description":"Find a data collection role involving HTML parsing and cleaning.","query":"网页采集 HTML 解析 数据清洗实习岗位","top_k":3,"expected_job_id":3}
+{"schema_version":1,"case_id":"retrieval_devops","description":"Find a DevOps role involving Linux, Docker, CI, and deployment.","query":"Linux Docker CI 部署实习岗位","top_k":3,"expected_job_id":4}
+{"schema_version":1,"case_id":"retrieval_functional_testing","description":"Find a software testing role for functional, API, and regression tests.","query":"功能测试 接口验证 回归测试实习岗位","top_k":3,"expected_job_id":6}

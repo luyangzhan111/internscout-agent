@@ -176,6 +176,8 @@ def test_maps_tool_definition_without_redefining_parameters() -> None:
         ModelRequest(user_message="查询", tools=[definition])
     )
 
+    assert fake.responses.calls[0]["reasoning"] == {"effort": "none"}
+    assert "tool_choice" not in fake.responses.calls[0]
     assert fake.responses.calls[0]["tools"] == [
         {
             "type": "function",
@@ -264,6 +266,7 @@ def test_maps_failed_tool_execution_history() -> None:
 
     DeepSeekModelClient(model="gpt-test", client=fake).generate(request)
 
+    assert fake.responses.calls[0]["reasoning"] == {"effort": "none"}
     output = json.loads(fake.responses.calls[0]["input"][2]["output"])
     assert output == {
         "success": False,
@@ -321,9 +324,114 @@ def test_propagates_provider_exception() -> None:
         )
 
 
-def test_rejects_multiple_function_calls() -> None:
-    fake = FakeClient(response=response(output=[function_call(), function_call(call_id="call_002")]))
-    with pytest.raises(ValueError, match="multiple function calls"):
+def test_maps_multiple_function_calls_in_provider_order() -> None:
+    fake = FakeClient(
+        response=response(
+            output=[
+                function_call(
+                    call_id="call_search",
+                    name="search_jobs",
+                    arguments='{"city": "深圳"}',
+                ),
+                function_call(
+                    call_id="call_detail",
+                    name="get_job_detail",
+                    arguments='{"job_id": 5}',
+                ),
+            ]
+        )
+    )
+
+    result = DeepSeekModelClient(model="gpt-test", client=fake).generate(
+        ModelRequest(user_message="查询")
+    )
+
+    assert result == ToolCallResponse(
+        tool_call=ToolCall(
+            call_id="call_search",
+            tool_name="search_jobs",
+            arguments={"city": "深圳"},
+        )
+    )
+
+
+def test_maps_multiple_function_calls_in_reverse_provider_order() -> None:
+    fake = FakeClient(
+        response=response(
+            output=[
+                function_call(
+                    call_id="call_detail",
+                    name="get_job_detail",
+                    arguments='{"job_id": 5}',
+                ),
+                function_call(
+                    call_id="call_search",
+                    name="search_jobs",
+                    arguments='{"city": "深圳"}',
+                ),
+            ]
+        )
+    )
+
+    result = DeepSeekModelClient(model="gpt-test", client=fake).generate(
+        ModelRequest(user_message="查询")
+    )
+
+    assert result == ToolCallResponse(
+        tool_call=ToolCall(
+            call_id="call_detail",
+            tool_name="get_job_detail",
+            arguments={"job_id": 5},
+        )
+    )
+
+
+def test_maps_first_function_call_without_parsing_later_arguments() -> None:
+    fake = FakeClient(
+        response=response(
+            output=[
+                function_call(
+                    call_id="call_search",
+                    name="search_jobs",
+                    arguments='{"city": "深圳"}',
+                ),
+                function_call(
+                    call_id="call_detail",
+                    name="get_job_detail",
+                    arguments="not-json",
+                ),
+            ]
+        )
+    )
+
+    result = DeepSeekModelClient(model="gpt-test", client=fake).generate(
+        ModelRequest(user_message="查询")
+    )
+
+    assert result == ToolCallResponse(
+        tool_call=ToolCall(
+            call_id="call_search",
+            tool_name="search_jobs",
+            arguments={"city": "深圳"},
+        )
+    )
+
+
+def test_rejects_malformed_selected_first_function_call() -> None:
+    fake = FakeClient(
+        response=response(
+            output=[
+                function_call(arguments="not-json"),
+                function_call(
+                    call_id="call_detail",
+                    name="get_job_detail",
+                    arguments='{"job_id": 5}',
+                ),
+            ]
+        )
+    )
+
+    with pytest.raises(ValueError):
         DeepSeekModelClient(model="gpt-test", client=fake).generate(
             ModelRequest(user_message="查询")
         )

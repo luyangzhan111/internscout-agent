@@ -10,6 +10,8 @@ from app.database import (
     get_session,
     query_jobs,
 )
+from app.api.dependencies import get_retrieval_runtime
+from app.rag.runtime import RetrievalRuntime
 from app.schemas import CrawlResponse
 from app.workflows import ingest_jobs
 
@@ -30,6 +32,10 @@ def crawl_jobs(
         Session,
         Depends(get_session),
     ],
+    retrieval_runtime: Annotated[
+        RetrievalRuntime | None,
+        Depends(get_retrieval_runtime),
+    ],
 ) -> CrawlResponse:
     """采集、清洗、去重并保存模拟岗位。"""
 
@@ -37,6 +43,9 @@ def crawl_jobs(
         MockJobCrawler(),
         session,
     )
+
+    if retrieval_runtime is not None:
+        retrieval_runtime.mark_dirty()
 
     _, database_total = query_jobs(
         session,

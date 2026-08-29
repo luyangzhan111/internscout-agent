@@ -14,6 +14,9 @@ from app.database import (
     get_session,
 )
 from app.main import app
+from app.rag.embedding import FakeEmbeddingProvider
+from app.rag.runtime import RetrievalRuntime
+from app.api.dependencies import get_retrieval_runtime
 
 
 @pytest.fixture
@@ -111,6 +114,84 @@ def test_post_crawl_ingests_mock_jobs(
 
     assert jobs_data["total"] == 6
     assert len(jobs_data["items"]) == 6
+
+
+def test_lifespan_mounts_application_retrieval_runtime_state(
+    crawl_api_client: TestClient,
+) -> None:
+    assert hasattr(app.state, "retrieval_runtime")
+
+
+def test_successful_crawl_marks_runtime_dirty_without_rebuilding(
+    crawl_api_client: TestClient,
+) -> None:
+    runtime = RetrievalRuntime(
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    runtime.rebuild([])
+    assert runtime.is_ready is True
+
+    previous = app.dependency_overrides.get(
+        get_retrieval_runtime,
+    )
+    app.dependency_overrides[get_retrieval_runtime] = (
+        lambda: runtime
+    )
+    try:
+        response = crawl_api_client.post(
+            "/api/crawl"
+        )
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(
+                get_retrieval_runtime,
+                None,
+            )
+        else:
+            app.dependency_overrides[get_retrieval_runtime] = previous
+
+    assert response.status_code == 200
+    assert runtime.is_dirty is True
+    assert runtime.is_ready is False
+
+
+def test_failed_crawl_does_not_mark_clean_runtime_dirty(
+    crawl_api_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = RetrievalRuntime(
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+    runtime.rebuild([])
+
+    def fail_ingestion(*args: object, **kwargs: object) -> list[object]:
+        raise RuntimeError("crawl failed")
+
+    monkeypatch.setattr(
+        "app.api.routes.crawl.ingest_jobs",
+        fail_ingestion,
+    )
+    previous = app.dependency_overrides.get(
+        get_retrieval_runtime,
+    )
+    app.dependency_overrides[get_retrieval_runtime] = (
+        lambda: runtime
+    )
+    try:
+        with pytest.raises(RuntimeError, match="crawl failed"):
+            crawl_api_client.post(
+                "/api/crawl"
+            )
+    finally:
+        if previous is None:
+            app.dependency_overrides.pop(
+                get_retrieval_runtime,
+                None,
+            )
+        else:
+            app.dependency_overrides[get_retrieval_runtime] = previous
+
+    assert runtime.is_dirty is False
 
 
 def test_post_crawl_is_idempotent(

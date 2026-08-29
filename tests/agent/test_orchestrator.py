@@ -18,7 +18,10 @@ from app.agent.orchestrator import (
     AgentOrchestrator,
 )
 from app.agent.tools.base import BaseTool
+from app.agent.tools.retrieval_tool import RetrieveJobKnowledgeTool
 from app.agent.tools.registry import ToolRegistry
+from app.rag.contracts import JobDocument, RetrievalResult
+from app.rag.retriever import JobKnowledgeRetriever
 from tests.agent.fakes.fake_model_client import (
     FakeModelClient,
 )
@@ -85,6 +88,28 @@ class InvalidResponseModelClient(ModelClient):
         request: ModelRequest,
     ):
         return object()
+
+
+class FakeJobKnowledgeRetriever(JobKnowledgeRetriever):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def search(
+        self,
+        query: str,
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        self.calls.append((query, top_k))
+        return [
+            RetrievalResult(
+                document=JobDocument(
+                    id=7,
+                    content="Agent workflow internship",
+                    metadata={"job_id": 7},
+                ),
+                score=0.9,
+            )
+        ]
 
 
 def build_registry(
@@ -186,6 +211,49 @@ def test_orchestrator_runs_tool_then_returns_final_answer() -> None:
         .result.data
         == {"value": 3}
     )
+
+
+def test_orchestrator_runs_real_retrieval_tool_and_observes_result() -> None:
+    retriever = FakeJobKnowledgeRetriever()
+    retrieval_tool = RetrieveJobKnowledgeTool(retriever)
+    model = FakeModelClient(
+        responses=[
+            ToolCallResponse(
+                tool_call=ToolCall(
+                    call_id="retrieve_001",
+                    tool_name="retrieve_job_knowledge",
+                    arguments={
+                        "query": "agent workflow",
+                        "top_k": 3,
+                    },
+                )
+            ),
+            FinalAnswerResponse(answer="已找到相关岗位知识。"),
+        ]
+    )
+
+    result = AgentOrchestrator(
+        model_client=model,
+        tool_registry=build_registry(retrieval_tool),
+    ).run("查找 agent workflow 相关岗位知识")
+
+    assert result.answer == "已找到相关岗位知识。"
+    assert result.steps == 2
+    assert retriever.calls == [("agent workflow", 3)]
+    assert len(result.tool_executions) == 1
+    execution = result.tool_executions[0]
+    assert execution.result.success is True
+    assert execution.result.data == [
+        {
+            "document": {
+                "id": 7,
+                "content": "Agent workflow internship",
+                "metadata": {"job_id": 7},
+            },
+            "score": 0.9,
+        }
+    ]
+    assert model.requests[1].tool_executions[0] == execution
 
 
 def test_orchestrator_runs_multiple_tools_in_sequence() -> None:

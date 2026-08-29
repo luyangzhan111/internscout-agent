@@ -11,6 +11,9 @@ from app.agent.contracts import (
 from app.agent.exceptions import AgentMaxStepsExceeded
 from app.agent.orchestrator import AgentOrchestrator
 from app.agent.tools.job_query import JobQueryPort
+from app.agent.tools.retrieval_tool import RetrieveJobKnowledgeTool
+from app.rag.contracts import RetrievalResult
+from app.rag.retriever import JobKnowledgeRetriever
 from app.schemas.job_response import JobRead
 from tests.agent.fakes.fake_model_client import FakeModelClient
 
@@ -32,6 +35,21 @@ class FakeJobQuery(JobQueryPort):
         job_id: int,
     ) -> JobRead | None:
         return None
+
+
+class FakeJobRetriever(JobKnowledgeRetriever):
+    def __init__(self) -> None:
+        self.index_calls = 0
+
+    def index_jobs(self, jobs: list[JobRead]) -> None:
+        self.index_calls += 1
+
+    def search(
+        self,
+        query: str,
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        return []
 
 
 def create_orchestrator(
@@ -93,6 +111,31 @@ def test_factory_accepts_fake_model_client() -> None:
         "get_job_detail",
         "match_jobs",
     ]
+
+
+def test_factory_registers_injected_retrieval_tool_last() -> None:
+    model_client = FakeModelClient(
+        responses=[FinalAnswerResponse(answer="完成。")]
+    )
+    job_retriever = FakeJobRetriever()
+
+    orchestrator = create_agent_orchestrator(
+        model_client=model_client,
+        job_query=FakeJobQuery(),
+        job_retriever=job_retriever,
+    )
+
+    tools = orchestrator._tool_registry.list_tools()
+
+    assert [tool.name for tool in tools] == [
+        "search_jobs",
+        "get_job_detail",
+        "match_jobs",
+        "retrieve_job_knowledge",
+    ]
+    assert isinstance(tools[-1], RetrieveJobKnowledgeTool)
+    assert tools[-1]._retriever is job_retriever
+    assert job_retriever.index_calls == 0
 
 
 def test_factory_default_max_steps_is_five() -> None:
