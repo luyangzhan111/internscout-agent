@@ -5,12 +5,12 @@
 This runbook documents reproducible local execution for InternScout Agent:
 
 ```text
-Streamlit Demo → FastAPI Backend → Agent Runtime → Tools / Matching → SQLite
+Streamlit Demo → FastAPI Backend → Agent Runtime → Tools / Matching / Optional Retrieval → SQLite
 ```
 
 It covers direct Python development and Docker Compose local execution.
 
-It does not describe production deployment, cloud hosting, Kubernetes, RAG, Memory, a Multi-Agent runtime, persistent conversation, or real-time recruitment data. The Stage 13 “multi-agent” wording refers to the development workflow only.
+It does not describe public production deployment, cloud hosting, Kubernetes, Memory, a Multi-Agent runtime, parallel tool execution, persistent conversation, or real-time recruitment data. Retrieval is supported as an optional local capability when the Backend receives embedding configuration. The Stage 13 “multi-agent” wording refers to the development workflow only.
 
 ## 2. Prerequisites
 
@@ -42,6 +42,20 @@ DEEPSEEK_API_KEY=your-real-key
 DEEPSEEK_MODEL=your-model-name
 ```
 
+Required Backend variables to enable semantic retrieval:
+
+```text
+INTERNSCOUT_EMBEDDING_API_KEY=your-embedding-key
+INTERNSCOUT_EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+```
+
+Optional embedding settings:
+
+```text
+INTERNSCOUT_EMBEDDING_MODEL=text-embedding-v4
+INTERNSCOUT_EMBEDDING_DIMENSIONS=1024
+```
+
 Never commit `.env` or a real API key.
 
 The supported configuration variables are:
@@ -50,11 +64,15 @@ The supported configuration variables are:
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | Backend provider authentication | No default; required for Agent queries |
 | `DEEPSEEK_MODEL` | Backend provider model | No default; required for Agent queries |
+| `INTERNSCOUT_EMBEDDING_API_KEY` | Backend embedding provider authentication | No default; required to enable retrieval |
+| `INTERNSCOUT_EMBEDDING_BASE_URL` | OpenAI-compatible embedding endpoint | No default; required to enable retrieval |
+| `INTERNSCOUT_EMBEDDING_MODEL` | Embedding model name | `text-embedding-v4` |
+| `INTERNSCOUT_EMBEDDING_DIMENSIONS` | Expected embedding vector size | `1024` |
 | `INTERNSCOUT_DATABASE_URL` | SQLite URL for direct local Backend execution | `sqlite:///./internscout.db` |
 | `INTERNSCOUT_API_BASE_URL` | Backend URL used by the Demo | Local: `http://127.0.0.1:8000`; Compose: `http://backend:8000` |
 | `INTERNSCOUT_API_TIMEOUT_SECONDS` | Demo HTTP timeout | `60` |
 
-Direct Python processes read environment variables but do not automatically load `.env`. Docker Compose reads `.env` for Compose interpolation. The current Compose file explicitly sets the container database URL to `sqlite:////data/internscout.db` and the container Demo URL to `http://backend:8000`.
+Direct Python processes read environment variables but do not automatically load `.env`. Docker Compose reads `.env` for Compose interpolation. The current Compose file explicitly passes DeepSeek and embedding configuration to the Backend, sets the container database URL to `sqlite:////data/internscout.db`, and sets the container Demo URL to `http://backend:8000`. Provider secrets are not passed to the Demo.
 
 ## 4. Local Python development
 
@@ -78,7 +96,7 @@ In a second terminal, start the Demo:
 streamlit run demo/app.py
 ```
 
-The local Demo calls `http://127.0.0.1:8000` by default. This mode runs the two processes separately and uses the local SQLite default unless `INTERNSCOUT_DATABASE_URL` is overridden.
+The local Demo calls `http://127.0.0.1:8000` by default. This mode runs the two processes separately and uses the local SQLite default unless `INTERNSCOUT_DATABASE_URL` is overridden. Retrieval is optional; set the two required embedding variables to enable it.
 
 ## 5. Docker Compose startup
 
@@ -94,7 +112,7 @@ Compose starts two services:
 - `backend`: FastAPI on container port `8000`
 - `demo`: Streamlit on container port `8501`
 
-The Demo uses Docker service discovery and calls `http://backend:8000` inside the Compose network. It does not receive the DeepSeek provider secrets.
+The Demo uses Docker service discovery and calls `http://backend:8000` inside the Compose network. It does not receive DeepSeek or embedding provider secrets.
 
 ## 6. Service URLs
 
@@ -129,11 +147,19 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
 
 This populates local SQLite data from `MockJobCrawler`. It does not fetch live recruitment data and does not trigger the OPPO real-source crawler.
 
-## 9. DeepSeek configuration boundary
+## 9. Provider configuration and retrieval lifecycle
 
 `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` are Backend configuration. They are required when using `POST /api/agent/query` or the Streamlit Agent Demo.
 
-The Demo container only needs its Backend URL and timeout configuration. If the provider variables are missing, the Backend can still start and expose health/data endpoints, but Agent queries return the existing provider-unavailable response.
+`INTERNSCOUT_EMBEDDING_API_KEY` and `INTERNSCOUT_EMBEDDING_BASE_URL` are also Backend-only configuration. They are required to enable semantic retrieval. The model and dimensions variables are optional and default to `text-embedding-v4` and `1024`.
+
+If either required embedding variable is missing or invalid, the Backend still starts and exposes health/data endpoints. Retrieval is disabled and the Agent falls back to `search_jobs`, `get_job_detail`, and `match_jobs`. Embedding configuration is not required for FastAPI startup.
+
+FastAPI constructs an optional `RetrievalRuntime` at startup without embedding all jobs. On an Agent request, a dirty or unready runtime collects the current database snapshot and rebuilds lazily. Successful `/api/crawl` ingestion only calls `mark_dirty()`; it does not perform embedding during crawl. A successful rebuild swaps in the new retriever. A failed refresh keeps the old retriever and leaves the runtime dirty; a failed initial rebuild leaves retrieval unavailable for that request.
+
+Retrieval is exposed through the Agent tool `retrieve_job_knowledge`; the Streamlit Demo has no separate retrieval UI.
+
+DeepSeek uses the Responses API with reasoning disabled for tool compatibility. If multiple function calls are returned, InternScout projects the provider-order first call, executes one tool, and lets the next model turn replan. Tool execution remains sequential.
 
 Blocking CI does not require a DeepSeek key and must not call the live provider.
 
@@ -205,4 +231,7 @@ Confirm that Docker Engine or Docker Desktop is running. A local engine availabi
 - The default Demo data is local SQLite/Mock data, not real-time recruitment data.
 - Agent runs are request-scoped and do not preserve cross-request conversation state.
 - Tool calling remains sequential.
+- `InMemoryVectorStore` is a process-local index and is not a persistent external vector database.
+- Retrieval rebuild is lazy and retrieval remains optional when embedding configuration is absent.
+- The controlled CI embedding fixture is not a general real-embedding quality benchmark.
 - No public production deployment is provided.
