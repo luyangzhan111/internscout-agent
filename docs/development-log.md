@@ -5408,3 +5408,38 @@ full suite:        710 passed in 16.64s
 The 710-pass result is the current Stage 13.5G closeout baseline. Real provider
 calls, Docker builds, and public deployment are not part of this documentation
 milestone.
+
+---
+
+## Stage 13.5H-F7 — Final Release-State Documentation Sync
+
+Date:
+
+2026-08-29
+
+Release line:
+
+main / v1.1.0
+
+### Milestone
+
+Stage 13.5 is complete and release-ready. PR #14 merged the reviewed Stage 13.5
+feature into `main`; merge commit `16313c1` contains feature head `bfc3fd5`, and
+the merge tree is identical to the reviewed feature tree.
+
+### Release Evidence
+
+- Verified Stage 13.5 product baseline: 710 passed, 0 failed, 0 errors.
+- GitHub Actions for PR #14: SUCCESS.
+- Post-merge `tests/evaluation`: 95 passed.
+- Post-merge `tests/agent` + `tests/rag`: 197 passed.
+- Post-merge local full rerun: 710 collected, 618 passed, 0 failed, 92 errors;
+  Windows temporary-directory / SQLite ACL, CLASS D local environment issue.
+- `git diff --check`: PASS.
+- `docker compose config --quiet`: PASS.
+- Local Docker build has no new success evidence because the Docker Desktop
+  Linux engine / buildx local access remained unavailable; CLASS D local
+  environment issue, not a product blocker.
+
+No production code, test, evaluation, CI, or Docker configuration change is
+part of this release-state documentation sync.

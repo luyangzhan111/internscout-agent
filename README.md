@@ -2,15 +2,13 @@
 
 > An AI Agent application for internship discovery, job data processing, and candidate-job matching.
 >
-> Current development target / portfolio version: **v1.1.0**
->
-> No `v1.1.0` Git tag or GitHub Release has been created.
+> Current portfolio version: **v1.1.0**
 
 ## Project Overview
 
 InternScout Agent 不是一个普通的爬虫脚本，而是一个把岗位数据 pipeline 作为基础能力、再由 Agent Runtime 完成查询、工具调用与候选人匹配的 AI Agent 应用。项目展示了从 internship crawling pipeline、数据清洗与标准化，到 FastAPI backend、Agent orchestration、tool calling、candidate-job matching、agent evaluation、Docker deployment 和 CI validation 的完整工程链路。
 
-项目当前完成至 Stage 13.5G，正在进行 v1.1.0 closeout。Stage 11 完成确定性候选人 / 岗位匹配能力，Stage 12 完成 Agent Evaluation 与 CI validation，Stage 13 完成 Docker Compose 本地部署、Product Demo 与 release preparation，Stage 13.5 增加岗位知识语义检索层，并保留 OPPO Careers 数据源适配验证能力。
+项目当前完成 Stage 13.5，并已通过 PR #14 merge into `main`，形成 v1.1.0 release line。Stage 11 完成确定性候选人 / 岗位匹配能力，Stage 12 完成 Agent Evaluation 与 CI validation，Stage 13 完成 Docker Compose 本地部署、Product Demo 与 release preparation，Stage 13.5 增加岗位知识语义检索层，并保留 OPPO Careers 数据源适配验证能力。
 
 项目当前定位为可复现、可测试、可解释的本地产品原型与公开 portfolio 项目。默认 Demo 使用本地 SQLite 和 Mock 数据；OPPO Careers 数据源适配验证能力，不代表 Demo 默认读取实时招聘网站。
 
@@ -292,12 +290,14 @@ Product Demo 当前支持单独 Python 进程和 Docker Compose 两种本地运�
 
 ## Evaluation and Testing
 
-Stage 13.5G closeout 的 automated regression evidence：
+Verified Stage 13.5 product regression baseline：
 
 - **710 passed**
 - `tests/evaluation`: **95 passed**
 - `tests/agent`: **139 passed**
 - `tests/rag`: **58 passed**
+
+这里的 710-pass full-suite result 是 reviewed Stage 13.5 feature / pre-merge product baseline。PR #14 GitHub Actions 已成功，merge 后 `main` tree 与 reviewed feature head 一致，post-merge targeted evaluation 与 Agent/RAG suites 通过；本机 post-merge full rerun 受 Windows temporary-directory / SQLite ACL 限制，不把该环境错误描述为 product regression。
 
 运行测试：
 

@@ -22,32 +22,18 @@ job ingestion
 → local Docker Compose
 ```
 
-- Released/tagged baseline: `v1.0.0`（tag 已存在并保持冻结）。
-- Current development target: `v1.1.0`。
-- Current branch: `feat/stage13.5-rag`。
-- Implementation / review baseline: `60ed735`（Stage 13.5 implementation 与 H-D documentation 已完成）。
-- `v1.1.0` tag 尚未创建，GitHub Release 尚未创建，PR/merge 尚未发生。
+- Previous released baseline: `v1.0.0`（tag 已存在并保持冻结）。
+- Current portfolio / product version: `v1.1.0`。
+- Current release line: `main` / `v1.1.0`。
+- PR #14 已 merge into `main`；PR merge commit 为 `16313c1`，merged feature head 为 `bfc3fd5`，merge tree 与 reviewed feature tree 一致。
 - FastAPI application metadata version 仍为 `0.1.0`；本次 snapshot 更新不修改 production code。
 
 ## 2. Current Stage Status
 
 - Stage 0–13: complete。
-- Stage 13.5 implementation: complete。
-- Stage 13.5G Retrieval Evaluation: complete。
-- Stage 13.5H: closeout in progress。
-  - H-A: complete。
-  - H-B: complete + committed。
-  - H-C: complete。
-  - H-D: complete。
-  - H-E: release-readiness validation / final closeout review in progress。
-  - H-F: pending。
-
-Current closeout target:
-
-1. H-E: release-readiness validation / final closeout review。
-2. H-F: PR / merge / `v1.1.0` tag and release closeout。
-
-当前不声称 Stage 13.5 fully released，也不声称 `v1.1.0` 已发布。
+- Stage 13.5: complete / release-ready。
+- PR #14: merged into `main`。
+- Release validation: complete。
 
 ## 3. Current Capabilities
 
@@ -246,15 +232,26 @@ Docker Compose 当前真实状态：
 
 ## 9. Current Test Baseline
 
-Current verified Stage 13.5G evidence：
+Verified Stage 13.5 product regression baseline（reviewed feature / pre-merge full regression）：
 
 - `tests/evaluation`: 95 passed。
 - `tests/agent`: 139 passed。
 - `tests/rag`: 58 passed。
 - `tests/test_agent_api.py`: 22 passed。
-- Full suite: `710 passed in 16.64s`。
+- Full suite: `710 passed in 16.64s`，0 failed，0 errors。
 
-Full-suite evidence 使用 fresh external basetemp，以绕过本机历史 pytest temp ACL 问题。该 Windows `WinError 5` 属于环境权限噪声，不是当前产品 test failure。当前 baseline 是 `710 passed`；旧的 `570 passed` 不再作为 current baseline。
+Post-merge `main` validation：
+
+- PR #14 GitHub Actions: SUCCESS。
+- Merge tree 与 reviewed feature head `bfc3fd5` 一致。
+- `tests/evaluation`: 95 passed。
+- `tests/agent` + `tests/rag`: 197 passed。
+- `git diff --check`: PASS。
+- `docker compose config --quiet`: PASS。
+- Full local rerun collected 710 tests：618 passed，0 failed，92 errors；errors 来自 Windows temporary-directory / SQLite ACL，分类为 CLASS D local environment issue，不是 product regression。
+- Local `docker compose build` 未取得新的成功 evidence；Docker Desktop Linux engine / buildx local access failure 分类为 CLASS D local environment issue，不是 product blocker。
+
+当前稳定 product baseline 是 reviewed Stage 13.5 full regression 的 `710 passed`；不能把 post-merge 本机 environment-limited rerun 表述为 `710 passed`。旧的 `570 passed` 不再作为 current baseline。
 
 ## 10. Known Limitations and Explicit Non-goals
 
