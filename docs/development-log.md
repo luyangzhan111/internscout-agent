@@ -5364,3 +5364,47 @@ NOT RUN / NOT VERIFIED in this documentation closeout
 ```
 
 The CI workflow contains `docker compose build`, but no successful build execution result is recorded in this working tree. No Docker runtime smoke or public deployment result is claimed.
+
+---
+
+## Stage 13.5H-D — Stage Review + Development Log
+
+Date:
+
+2026-08-29
+
+Working branch:
+
+feat/stage13.5-rag
+
+### Milestone
+
+The Stage 13.5 Job Knowledge Retrieval Layer is complete and the v1.1.0
+closeout is in progress.
+
+- Added semantic job retrieval for unstructured job descriptions while
+  preserving deterministic candidate-job matching.
+- Integrated the optional retrieve_job_knowledge Agent tool.
+- Added the production OpenAI-compatible embedding provider abstraction with
+  text-embedding-v4 / 1024 defaults.
+- Added the lazy, build-then-swap retrieval runtime and crawl invalidation via
+  mark_dirty().
+- Preserved sequential Agent behavior through the DeepSeek first-call
+  compatibility layer.
+- Added offline deterministic direct retrieval and Agent retrieval evaluation
+  gates.
+- Closed the Docker embedding configuration default mismatch in the local
+  Compose topology.
+
+### Validation Baseline
+
+~~~text
+tests/evaluation: 95 passed
+tests/agent:       139 passed
+tests/rag:          58 passed
+full suite:        710 passed in 16.64s
+~~~
+
+The 710-pass result is the current Stage 13.5G closeout baseline. Real provider
+calls, Docker builds, and public deployment are not part of this documentation
+milestone.
