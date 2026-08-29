@@ -1,577 +1,337 @@
-# InternScout Agent — Project State
+# InternScout Agent — Current Project Snapshot
 
-> 本文件是 InternScout Agent 当前状态的唯一项目快照（Project Snapshot）。它记录仍然有效的项目能力、架构、技术决策、测试状态、限制、下一阶段与长期开发规范；它不是开发日志、完整 Debug 历史或 Stage Review。
+> 本文件是 InternScout Agent 当前状态的唯一项目快照（Current Project Snapshot）。它只保留当前仍然有效的项目身份、能力、架构、provider、Agent tools、retrieval、evaluation、deployment、testing、限制、下一阶段与长期工程约束；它不是 development log、changelog、debug transcript、commit history、tutorial 或 interview review document。
 
----
+## 1. Project Identity and Release Status
 
-# 1. Project Overview
+InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信息采集、处理、存储、查询与智能分析的 AI Agent / AI application portfolio project。
 
-InternScout Agent 是一个面向软件工程、AI 与 Agent 实习岗位的信息采集、处理、存储、查询与智能分析练习型软件工程项目。
+核心闭环：
 
-当前已具备：
+```text
+job ingestion
+→ normalization
+→ persistence
+→ structured query
+→ deterministic candidate-job matching
+→ semantic job knowledge retrieval
+→ Agent tool orchestration
+→ FastAPI
+→ Streamlit Demo
+→ deterministic evaluation / CI
+→ local Docker Compose
+```
 
-- 岗位数据模型、MockJobCrawler / sample HTML、数据清洗、去重与 SQLite 持久化
-- 第一个已验证的真实招聘数据源：OPPO Careers
-- OPPO Careers → OppoJobSourceClient → OppoJobCrawler → JobCreate → existing processing / persistence → Jobs API / Agent
-- Repository 查询、REST API、筛选、分页与 HTTP 服务闭环
-- provider-neutral Agent Contract、Tool System、Tool-Calling Agent Runtime 与 AgentOrchestrator
-- Tool / Repository 的 Port / Adapter 解耦
-- DeepSeek 真实 LLM Provider Adapter 与真实 Provider / Agent 验证
-- CandidateProfile、JobSkillExtractor、CandidateMatcher 与 JobMatchingService
-- MatchJobsTool 与 deterministic and explainable job matching
-- Agent evaluation layer、offline evaluation runner 与 application composition factory
-- Stage 12E Streamlit Product Demo、Demo HTTP client、Demo-side contracts 与 rendering layer
-- `.env.example`、`INTERNSCOUT_DATABASE_URL` 与本地 / Compose 环境配置边界
-- FastAPI Backend 与 Streamlit Demo 的 Docker images、Docker Compose topology 与 SQLite named volume persistence
-- GitHub Actions 中的 pytest、Docker Compose 配置校验与 Docker image build 校验
-- 自动化测试、Git / GitHub / Pull Request Workflow 与 Codex Review
+- Released/tagged baseline: `v1.0.0`（tag 已存在并保持冻结）。
+- Current development target: `v1.1.0`。
+- Current branch: `feat/stage13.5-rag`。
+- Current snapshot HEAD: `455eb3c7c33e9a396f87194e780ee99074583d7b`。
+- `v1.1.0` tag 尚未创建，GitHub Release 尚未创建，PR/merge 尚未发生。
+- FastAPI application metadata version 仍为 `0.1.0`；本次 snapshot 更新不修改 production code。
 
-项目当前不声称具备 multi-source orchestration、production scheduler、real-source HTTP trigger 或 distributed crawling。
+## 2. Current Stage Status
 
-# 2. Core Technology Stack
+- Stage 0–13: complete。
+- Stage 13.5 implementation: complete。
+- Stage 13.5G Retrieval Evaluation: complete。
+- Stage 13.5H: closeout in progress。
+  - H-A: complete。
+  - H-B: complete + committed。
+  - H-C: current / PROJECT_STATE snapshot update in progress。
 
-- Python 3.12
-- FastAPI
-- Pydantic
-- BeautifulSoup
-- SQLAlchemy 2.x
-- SQLite
-- httpx（OPPO real-source HTTP boundary）
-- pytest
-- Streamlit 1.48.1
-- OpenAI Python SDK（作为 DeepSeek OpenAI-compatible API 客户端）
-- DeepSeek Responses API
-- Git、GitHub、Codex、VS Code
+Current next-stage target:
 
-开发环境：Windows、PowerShell、Python Virtual Environment（.venv）。不使用 requests。
+1. Stage 13.5H-D: Stage Review + Development Log。
+2. H-E: Final Regression / Final Review。
+3. H-F: PR / merge / `v1.1.0` tag and release closeout。
 
-# 3. Current Version Identity
+当前不声称 Stage 13.5 fully released，也不声称 `v1.1.0` 已发布。
 
-## Stage 11 Merge Identity
+## 3. Current Capabilities
 
-Short: e3b9b6c
+### Job ingestion
 
-Full: e3b9b6c0f33bd785103466c025b2b8072097eec5
+- `BaseJobCrawler`、`MockJobCrawler` 与本地 sample fixture。
+- OPPO explicit real-source adapter：`OppoJobSourceClient` / `OppoJobCrawler`。
+- cleaning、normalization、deduplication 与 SQLite persistence。
+- 默认 `POST /api/crawl` 使用 `MockJobCrawler`；OPPO adapter 需要显式组合调用。
 
-Corresponding merge: Merge pull request #11 from luyangzhan111/feat/stage-11-candidate-job-matching
+### Query and API
 
-Merge commit message: feat: complete Stage 11 deterministic candidate job matching
+- FastAPI health、crawl、job list/filter/pagination、job detail 与 Agent query。
+- 当前 HTTP endpoints：`GET /`、`GET /api/health`、`POST /api/crawl`、`GET /api/jobs`、`GET /api/jobs/{job_id}`、`POST /api/agent/query`。
+- `/api/agent/query` 每次请求触发一个独立的 request-scoped Agent run，不提供持久会话。
 
-## Snapshot Basis
+### Candidate matching
 
-Branch: main
+- `CandidateProfile`、`JobSkillExtractor`、`CandidateMatcher` 与 `JobMatchingService`。
+- deterministic skill extraction、deterministic scoring、match reasons、city filtering 与 stable ranking。
+- `MatchJobsTool` 委托 matching service；deterministic matching score 不由 LLM 拥有或替代。
 
-Stage 12 merge commit: d77bbc3
+### Agent runtime
 
-Stage 12 merge commit full hash: d77bbc391613c886bffdd04ce522e4937451e117
+- provider-neutral `AgentOrchestrator`、`ToolRegistry`、显式 tool contracts 与 sequential tool execution。
+- `DeepSeekModelClient` 作为真实 provider adapter。
+- `FakeModelClient` 用于 deterministic、offline tests/evaluations。
 
-Documentation snapshot: README.md and PROJECT_STATE.md are being updated for the v1.0.0 portfolio release.
+### Semantic job retrieval
 
-Stage 13 regression baseline: 570 passed
+- `JobDocument`、`EmbeddingProvider`、`FakeEmbeddingProvider` 与 `OpenAICompatibleEmbeddingProvider`。
+- `VectorStore`、`InMemoryVectorStore`、`JobKnowledgeRetriever` 与 `RetrievalRuntime`。
+- `RetrieveJobKnowledgeTool` 将岗位知识检索接入 Agent。
+- Semantic retrieval 为非结构化岗位描述增加 evidence/retrieval，和 deterministic matching score 互补，不替代 deterministic matching。
 
-Stage 11 merge identity e3b9b6c remains historical. Stage 10 merge identity 9c8b2ba is historical, not current. Stage 9 merge identity 30062fc is historical. Stage 8 identity 796db56 is historical.
+### Evaluation
 
-Stage 10 historical regression facts remain: combined OPPO regression 131 passed；post-merge main regression 350 passed, 0 warnings。
+- Stage 12 Agent evaluation。
+- Stage 13.5 direct retrieval evaluation。
+- Stage 13.5 Agent retrieval integration evaluation。
 
-## Stage 12 Merge Identity
+### Deployment
 
-Short: d77bbc3
+- FastAPI Backend。
+- Streamlit Product Demo。
+- Docker Compose local topology。
+- Backend `backend_data:/data` named volume 持久化 SQLite。
 
-Full: d77bbc391613c886bffdd04ce522e4937451e117
+## 4. Architecture
 
-Corresponding merge: Merge pull request #12 from luyangzhan111/feat/stage-12-agent-evaluation-ci-demo
+项目保持分层：
 
-Merge commit message: feat: implement agent evaluation framework and GitHub Actions CI
+```text
+Streamlit Demo → FastAPI → Agent Runtime → Tools + Matching → Database
+```
 
-## Stage 12E Merge Identity
+岗位 ingestion 的共享下游为：
 
-Short: ae21931
+```text
+Crawler → cleaning / normalization / deduplication → SQLite
+                                                        ↓
+                                      Jobs API / Agent tools / retrieval snapshot
+```
 
-Full: ae2193130dd480dc06d3cb245e464ba5ba0336cc
+Deterministic matching 与 semantic retrieval 是互补的两层能力。项目的 retrieval 是 semantic job knowledge retrieval，不是 generic PDF RAG。
 
-Corresponding merge: Merge pull request #13 from luyangzhan111/feat/stage-12e-product-demo
+### Retrieval architecture
 
-Merge commit message: feat: add Streamlit product demo for agent matching
+```text
+JobRead
+→ build_job_document()
+→ EmbeddingProvider
+→ VectorStore
+→ JobKnowledgeRetriever
+→ RetrieveJobKnowledgeTool
+→ AgentOrchestrator
+```
 
-## Stage 13 Integrated Identity
+`JobDocument` searchable content 包含：`title`、`company`、`city`、`skills`、`description`。当前 metadata 仅包含 `job_id`、`company`、`city`；不把 `salary`、`published_at`、`source` 或 `source_url` 当作 searchable content 或 metadata。
 
-Integrated baseline branch: `main`
+`InMemoryVectorStore` 是 process-local in-memory store，使用 cosine similarity，按 score descending 排序；相同分数保持 deterministic insertion-order tie behavior。它不是 persistent vector DB、external vector database 或 distributed index。
 
-Configuration commit: `4403314` — `feat: support configurable database url`
+### Agent tool registry
 
-Docker merge commit: `41b871a` — `Merge branch 'feat/stage13-docker'`
+Default / no retriever 时固定为 3 个工具：
 
-CI merge commit: `30614b0` — `Merge branch 'feat/stage13-ci'`
+1. `search_jobs`
+2. `get_job_detail`
+3. `match_jobs`
 
-Documentation closeout commit:
-b2d8360
+Retrieval ready 时在上述工具之后增加：
 
-## v1.0.0 Release Target
+4. `retrieve_job_knowledge`
 
-Version target: `v1.0.0`
+因此 Agent 不固定拥有 4 tools；retrieval 不可用时保留三工具 fallback。运行时仍为 sequential tool execution，不实现 parallel tool execution 或 Multi-Agent runtime。
 
-Release documentation status: COMPLETE IN WORKING TREE
+## 5. Retrieval Runtime and Provider Configuration
 
-The version target describes the public portfolio release milestone; it does not claim that a Git tag or GitHub Release has already been created.
+### RetrievalRuntime semantics
 
-# 4. Current Stage
+- Initial state：`dirty=True`，没有 retriever。
+- `mark_dirty()`：只标记当前 index stale，不执行 embedding 或 rebuild。
+- `rebuild()`：创建新的 vector store 与 retriever；完整构建成功后才 build-then-swap 当前 retriever。
+- Refresh failure：保留旧 retriever，`dirty` 保持 `True`。
+- First rebuild failure：没有可用 retriever；Agent 仍可使用默认三工具。
+- FastAPI startup 只构造 optional runtime/provider，不 eager embedding 或 indexing 全部岗位。
+- Agent request 遇到 dirty / not-ready runtime 时，通过完整 job snapshot 惰性 rebuild。
+- 成功 crawl ingestion 之后调用 `mark_dirty()`；crawl 本身不做 embedding。
 
-## 已完成阶段
+### Embedding provider
 
-Stage 0 ～ Stage 13
+Production abstraction 为 `OpenAICompatibleEmbeddingProvider`，当前目标兼容 Alibaba Cloud Bailian / Model Studio 的 OpenAI-compatible embeddings endpoint（Bailian-compatible endpoint）。
 
-## Stage 10 状态
+配置接口：
 
-Implementation: COMPLETE
-Real Source Integration: PASS
-Real OPPO Discovery / Detail: PASS
-Real Ingestion: PASS
-Jobs API Verification: PASS
-Real DeepSeek Agent E2E: PASS
-Final Review: PASS
-MUST FIX: 0
-SHOULD FIX: 0
-Post-merge main regression: PASS
+- `INTERNSCOUT_EMBEDDING_API_KEY`
+- `INTERNSCOUT_EMBEDDING_BASE_URL`
+- optional `INTERNSCOUT_EMBEDDING_MODEL`，default `text-embedding-v4`
+- optional `INTERNSCOUT_EMBEDDING_DIMENSIONS`，default `1024`
 
-## Stage 11 状态
+缺少 API key 或 base URL 时 retrieval disabled，FastAPI 与默认 Agent tools 仍可工作。当前 CI 不对真实 Bailian embedding quality 做 benchmark。
 
-Implementation: COMPLETE
-Deterministic Candidate / Job Matching: PASS
-Agent MatchJobsTool Integration: PASS
-Real Stage 11G Verification: PASS
-Final Review: PASS
-Post-merge main regression: PASS
-MUST FIX: 0
-SHOULD FIX: 0
+### DeepSeek provider decision
 
-Regression:
-503 passed, 0 warnings
+- Real LLM provider：DeepSeek。
+- API：DeepSeek Responses API。
+- Request reasoning：`{"effort": "none"}`。
+- Provider 返回多个 function calls 时采用 provider-order first-call projection，执行一个 selected call，再由下一轮 model turn replans。
+- Agent runtime 保持 sequential；不执行 parallel tool runtime，也不引入 multi-agent。
 
-## Stage 12A-D 状态
+## 6. Evaluation and CI
 
-Implementation: COMPLETE
-Evaluation Layer: PASS
-Composition Factory: PASS
-GitHub Actions CI: PASS
-Post-merge main regression: PASS
+### Stage 12 Agent Evaluation
 
-Historical regression before Stage 12E:
-`python -m pytest -q` => 551 passed
+使用 9 个 deterministic cases，metrics 为：
 
-## Stage 12E 状态
+- `execution_outcome`
+- `tool_selection`
+- `tool_sequence`
+- `tool_arguments`
+- `tool_results`
+- `answer_facts`
 
-Implementation: COMPLETE
-Optional Agent recommendation projection: PASS
-Streamlit Product Demo: PASS
-Demo HTTP client / contracts / rendering: PASS
-Dependency resolution (`streamlit==1.48.1`, `packaging==25.0`): PASS
-Streamlit runtime smoke: PASS
-Streamlit → FastAPI → Agent Runtime → match_jobs → Matching → local SQLite → UI: PASS
-GitHub Actions CI: PASS
-PR #13 merge: PASS
-MUST FIX: 0
-SHOULD FIX: 0
+### Stage 13.5 Direct Retrieval Evaluation
 
-Authoritative regression before Stage 13 documentation closeout:
-`python -m pytest -q` => 567 passed
+使用 6 个 cases，采用 `ControlledEmbeddingProvider` 与 production `JobKnowledgeRetriever`，metrics 仅为：
 
-## Stage 13 状态
+- Hit@K
+- Top-1
 
-Implementation: COMPLETE for the integrated configuration, Docker, Compose, and CI changes
+### Stage 13.5 Agent Retrieval Evaluation
 
-Docker deployment: COMPLETE — Backend and Streamlit Demo images, Docker Compose service topology, service networking, and SQLite named-volume persistence are implemented for local deployment.
+使用 2 个 cases，通过 `FakeModelClient` scripted `ToolCall`、真实 Agent loop 与 production retrieval tool path 验证 Agent/retrieval integration。
 
-Environment configuration: PASS — `.env.example` and `INTERNSCOUT_DATABASE_URL` support are present
+`ControlledEmbeddingProvider` 是 evaluation-only deterministic semantic fixture，用于证明 controlled semantic retrieval pipeline 与 ranking regression；它不证明 Bailian general embedding quality。
 
-Docker capability: PASS — separate Backend and Demo Dockerfiles, Compose services, service networking, and SQLite named volume are present
+Blocking CI evaluation 保持 offline、deterministic、secret-free、network-free，不使用真实 embedding provider call、DeepSeek API key、LLM judge、MRR 或 real embedding benchmark。
 
-Docker Compose configuration: PASS — `docker compose config --quiet`
+GitHub Actions 当前使用 Python 3.12，至少执行：
 
-Docker image build validation: COMPLETE IN CI CONFIGURATION — the workflow runs `docker compose build`; this documentation closeout does not claim an additional local engine run.
+- `python -m pytest -q`
+- `docker compose config --quiet`
+- `docker compose build`
 
-CI validation: COMPLETE — GitHub Actions defines independent Python test and Docker validation jobs, including pytest, Compose configuration validation, and Docker image build validation.
+Retrieval evaluation gates 通过 normal pytest collection 进入现有 CI gate；没有独立 real-provider CI。
 
-Test status: PASS — `python -m pytest -q` => 570 passed
+## 7. Deployment and Demo State
 
-Current project status: STAGE 13 COMPLETE / v1.0.0 PORTFOLIO RELEASE DOCUMENTATION READY
+Docker Compose 当前真实状态：
 
-Public or production deployment: NOT CLAIMED
+- Backend：host port `8000`。
+- Streamlit Demo：host port `8501`。
+- SQLite URL：`sqlite:////data/internscout.db`。
+- volume：`backend_data:/data`。
+- Demo backend URL：`http://backend:8000`。
+- DeepSeek env 与 embedding env 只传给 Backend。
+- Embedding Compose defaults：model `text-embedding-v4`、dimensions `1024`。
+- 缺少 embedding API key/base URL 时 retrieval disabled，FastAPI 仍可工作。
 
-Documentation closeout: COMPLETE IN WORKING TREE on main
+这代表 local Docker Compose reproducibility，不代表 public production deployment。
 
-Stage 13 implementation branches and their integrated commits are recorded above. The documentation updates in this task remain uncommitted and unpushed.
+默认数据与 Demo：
 
-## Next Stage
+- 默认 `POST /api/crawl` 使用 `MockJobCrawler` 与本地 sample fixture，sample fixture 为 6 jobs，不是 live recruitment feed。
+- OPPO real-source adapter 已存在，但不是默认 `/api/crawl` 来源。
+- Streamlit Demo 仅通过 HTTP client 调用 FastAPI；不直接访问 SQLite、Agent internals 或 provider secrets。
+- 当前没有 dedicated retrieval UI；retrieval 通过 Agent tool 提供。
 
-Specific Goal: UNKNOWN
-
-Stage 13 已完成配置、Docker、Compose、CI 与本地部署文档工作；v1.0.0 portfolio release documentation is ready in the working tree；下一阶段尚未定义。
-
-# 5. Implemented Backend Capabilities
-
-## Stage 11 candidate / job matching
-
-Stage 11 matching components：CandidateProfile、JobSkillExtractor、CandidateMatcher、JobMatchingService、MatchJobsTool。
-
-组件职责与边界：
-
-- CandidateProfile：验证并确定性规范化 request-scoped candidate skills 与 preferred cities。
-- JobSkillExtractor：从岗位 structured skills、title 与 description 中提取确定性技能证据。
-- CandidateMatcher：纯确定性计算 matched skills、missing skills、match score 与 reason。
-- JobMatchingService：通过 JobQueryPort 获取候选岗位，执行 city eligibility、matching、stable ranking 与 top_k 截断。
-- MatchJobsTool：作为只读 Agent Tool 验证输入并委托 JobMatchingService，不在 Tool 或 LLM 中复制 scoring 与 ranking logic。
-
-当前能力：
-
-- deterministic skill extraction
-- explainable matching score
-- matched/missing skill analysis
-- city filtering
-- deterministic ranking
-
-## Stage 12 evaluation and composition
-
-- `app/agent/composition.py` 提供 `create_agent_orchestrator`，集中构造 request-scoped Agent Runtime object graph。
-- `evals/` 提供 evaluation contracts、dataset loading、offline runner 与 deterministic scorers。
-- Evaluation runner 通过注入的 ModelClientFactory 与 JobQueryFactory 执行离线 evaluation cases。
-
-## Stage 12E product demo
-
-- `demo/app.py` 提供 Streamlit UI，收集候选人技能与意向城市并渲染推荐结果。
-- `demo/client.py` 仅通过 HTTP 调用现有 `POST /api/agent/query`。
-- `demo/contracts.py` 校验 Demo-side response contract；`demo/rendering.py` 负责展示转换。
-- Demo 默认消费 local SQLite 中已有岗位数据；Demo 数据不是实时招聘网站数据。
-- OPPO real-source ingestion capability 独立存在，不等同于默认 Demo 数据来源。
-
-## FastAPI and job data
-
-当前 HTTP API：GET /、GET /api/health、POST /api/crawl、GET /api/jobs、GET /api/jobs/{job_id}、POST /api/agent/query。
-
-POST /api/agent/query 表示每个 request 触发一次独立、无持久会话的 Agent run。请求可通过 `include_recommendations=true` opt in 结构化 `match_jobs` 推荐投影；默认仍只返回 answer、steps、tool_execution_count。它不是 persistent chat，也不暴露内部 ToolExecution trace。
-
-岗位服务支持健康与数据库检查、模拟岗位采集、岗位列表与详情查询、城市 / 公司 / 技能筛选、组合筛选与分页。岗位核心数据由 Pydantic 验证，数据库内部 identity_key 不向 API 或 Agent Tool 暴露。
-
-## Crawling, cleaning and persistence
-
-项目同时包含 MockJobCrawler 和 OppoJobCrawler。POST /api/crawl 仍为 mock-specific，仅执行 MockJobCrawler；HTTP clients 当前不能通过该端点触发真实 OPPO crawler。
-
-真实 OPPO 路径：OPPO Careers → OppoJobSourceClient → OppoJobCrawler → JobCreate → process_jobs → Cleaning + Deduplication → ingest_jobs → Repository → SQLite。
-
-MockJobCrawler 仍从 app/fixtures/sample_jobs.html 读取模拟招聘页面。当前 identity key 仍为 normalized company + title + city；Cleaning、Deduplication、Repository 与 SQLite 边界保持既有行为。
-
-## Real source layer
-
-app/crawlers/oppo_source_client.py symbols：OppoJobSourceClient、OppoPositionSummary、OppoPositionPage、OppoPositionDetail。
-
-app/crawlers/oppo_crawler.py symbol：OppoJobCrawler。
-
-架构：caller-owned synchronous httpx.Client → OppoJobSourceClient → typed OPPO source data → OppoJobCrawler → JobCreate。
-
-Source Client 负责 HTTP、timeout、status handling、JSON envelope validation、pagination validation 与 detail validation；它不感知 persistence、API 或 Agent。Crawler 负责 source query policy、finite pagination、detail ordering 与 JobCreate mapping；它不拥有 HTTP implementation。
-
-# 6. Agent Layer
-
-Agent Layer 位于 app/agent/，提供 provider-neutral Tool-Calling Runtime。AgentState 仅存在于单次 run；BaseTool、ToolRegistry、JobQueryPort 与 RepositoryJobQueryAdapter 保持既有边界。
-
-当前 Job Tools：
-
-- SearchJobsTool
-- GetJobDetailTool
-- MatchJobsTool
-
-当前仅支持 Sequential Tool Calling。
-
-# 7. Application Composition and HTTP Boundary
-
-FastAPI composition root：app/api/dependencies.py。Agent application composition factory：app/agent/composition.py。Provider construction 是 lazy 的。环境变量为 DEEPSEEK_API_KEY、DEEPSEEK_MODEL；不记录或暴露 API key value。
-
-# 8. Real LLM Provider Layer
-
-文件：app/agent/providers/deepseek_client.py；Class：DeepSeekModelClient。AgentOrchestrator → ModelClient → DeepSeekModelClient → DeepSeek Responses API。Provider-specific code 不进入 Agent Runtime、Tool System、Database 或 FastAPI route。DeepSeekModelClient 是 stateless；当前不实现 Retry、reasoning continuity 或 provider conversation persistence。
-
-# 9. Current Architecture
-
-Mock route path：POST /api/crawl → MockJobCrawler → ingest_jobs。
-
-Real-source integration path：explicit composition → httpx.Client → OppoJobSourceClient → OppoJobCrawler → ingest_jobs。
-
-Shared downstream：Repository → SQLite → Jobs API / Agent Tools。
-
-Stage 11 matching path：
-
-CandidateProfile
-↓
-JobMatchingService
-↓
-JobQueryPort
-↓
-Repository
-↓
-MatchJobsTool
-↓
-AgentOrchestrator
-↓
-DeepSeek explanation
-
-真实 OPPO 已集成，但 /api/crawl 仍为 mock-specific；既有 HTTP / Agent paths 保持不变。
-
-# 10. Frozen Architecture Decisions
-
-Stage 7–9 decisions retained：AgentOrchestrator remains provider-neutral；AgentState is per-run；ModelClient、BaseTool、ToolRegistry、JobQueryPort 与 RepositoryJobQueryAdapter 保持既有边界；DeepSeek isolated behind ModelClient and stateless；no parallel tool execution；real provider verification 与 pytest 分离；/api/agent/query 是一次 stateless Agent run。
-
-Stage 10 decisions：
-
-- External source HTTP/schema knowledge stays in OppoJobSourceClient。
-- OppoJobCrawler maps typed source data to existing JobCreate。
-- Real-source integration reuses process_jobs / ingest_jobs / Repository。
-- Source mapping and domain cleaning remain separate。
-- OppoJobCrawler preserves raw city；Cleaner owns normalization。
-- Automated source tests remain network-free；real external verification is separate from pytest。
-- Caller owns httpx.Client lifecycle。
-- No retry or partial-success policy in Stage 10。
-- /api/crawl remains mock-specific。
-- No database identity redesign。
-- No cross-page exact metadata equality assumption。
-
-Stage 12 decisions：
-
-- Agent Runtime object graph construction is centralized in `create_agent_orchestrator`。
-- Evaluation runs use injected offline ModelClient and JobQuery factories。
-- GitHub Actions runs the full `python -m pytest -q` suite on push and pull requests targeting `main`。
-
-Stage 12E decisions：
-
-- Reuse the existing `POST /api/agent/query`; do not introduce a new recommendation endpoint。
-- Recommendation projection is opt-in through `include_recommendations` and does not alter Agent Runtime or matching logic。
-- Streamlit communicates only with FastAPI through the Demo HTTP client。
-- Demo presentation owns validation and rendering only; it does not query SQLite or execute matching directly。
-- Default Demo data is local SQLite / MockJobCrawler data, not real-time recruiting website data。
-- OPPO real-source ingestion remains a separate capability；`POST /api/crawl` remains MockJobCrawler-specific。
-
-Stage 13 decisions：
-
-- `INTERNSCOUT_DATABASE_URL` is the supported database URL override; the direct local default remains `sqlite:///./internscout.db`。
-- Compose uses `sqlite:////data/internscout.db` in the Backend container and persists `/data` through the `backend_data` named volume。
-- Compose contains two services: `backend` and `demo`；the Demo reaches the Backend through `http://backend:8000` and does not receive DeepSeek secrets。
-- Stage 13 adds local container reproducibility and validation；it does not claim public or production deployment。
-
-# 11. OPPO Source Contract and Defensive Rules
-
-以下是 observed website/internal JSON endpoints，不是 officially supported public developer API：
-
-Discovery endpoint: POST https://career.oppo.com/ats-candidate-api/open-api/position/queryPositionList
-
-Detail endpoint: GET https://career.oppo.com/ats-candidate-api/open-api/position/queryPosition
-
-Human source URL: https://career.oppo.com/official/oppo/recruitment/post/{position_id}?recruitType={recruit_type}
-
-source_url 存储 human recruitment page。
-
-- Success code 仅接受 0 或 "0"。
-- Discovery total 接受 non-negative int 或 canonical non-negative ASCII decimal string；string total normalizes to int。
-- pageNum、pageSize、pages 保持 strict int-only。
-- Source Reality > Fixture Assumptions。
-
-分页数据完整性规则：当 pages > 0 时，maximum_representable_total = (pages - 1) * returned_page_size + len(raw_positions)。若 total > maximum_representable_total 则拒绝。该规则防止 metadata 导致 silent truncation；不强制 cross-page total equality、cross-page pages equality、full pages 或 accumulated crawler count。
-
-# 12. Automated Testing, Review, and Real Verification
-
-Authoritative baseline:
-570 passed
-
-Note:
-Later documentation-only rerun was blocked by local Windows permission issue and is not considered the project regression baseline.
-- Docker Compose configuration: `docker compose config --quiet` => PASS
-- Docker image build validation: defined in GitHub Actions through `docker compose build`; no additional local engine result is claimed here
-- Stage 12E post-merge main regression: PASS
-- Stage 12E GitHub Actions CI: PASS
-- Stage 12E Streamlit runtime smoke: PASS
-- Stage 12E full Demo chain through local SQLite to UI: PASS
-- Final Stage 11 Review: PASS；MUST FIX = 0；SHOULD FIX = 0
-- Real Stage 11G Verification: PASS
-
-Stage 10 historical baseline：
-
-- Source client: 117 passed
-- Crawler: 13 passed
-- Ingestion: 1 passed
-- Combined Stage 10 OPPO: 131 passed
-- Full project: 350 passed, 0 warnings
-- Post-merge main regression: 350 passed, 0 warnings
-- Final Stage 10 Review: MUST FIX = 0；SHOULD FIX = 0
-
-Real Stage 10 verification：
-
-- Real OPPO discovery/detail: PASS
-- Position: 2061649545671430146 / AI产品实习生 / 东莞市 / 2026-06-01 / OFFEN-RECRUITMENT
-- Real ingestion: PASS；Persisted city: 东莞
-- GET /api/jobs: 200；GET /api/jobs/1: 200
-- Provider: DeepSeek；Model: deepseek-v4-flash
-- POST /api/agent/query: 200；steps: 2；tool_execution_count: 1；Tool: search_jobs
-- Persisted OPPO data consumed: YES
-
-真实验证不记录或暴露 API key 内容。
-
-# 13. Current Limitations
-
-- Demo 默认使用 local SQLite 中已有岗位数据，不表示实时招聘网站数据。
-- OPPO real-source ingestion capability 与默认 Demo 数据来源不同；OPPO 仍不是 `/api/crawl` 的触发来源。
-- Demo 可通过分别运行的 Python 进程或 Docker Compose 在本地运行；未部署到公网或生产环境。
-- Mock HTML remains supported, but OPPO is the first real source。
-- OPPO 使用 observed website/internal JSON endpoints，source schema may change。
-- No production HTTP trigger for real OPPO crawling；/api/crawl remains MockJobCrawler-specific。
-- No retry、partial success、scheduler 或 multi-source orchestration。
-- Existing identity key remains normalized company + title + city；distinct OPPO position IDs with identical normalized identity may collapse。
-- SQLite remains the database；no Alembic migration。
-- No Memory / RAG / Vector DB / Streaming / Parallel Tool Calling / Multi-Agent / Persistent Conversation / reasoning continuity / token-cost accounting。
-
-# 14. Repository Tree
-
-以下为当前真实 tracked files（由 git ls-files 确认）：
-
-.gitattributes
-.gitignore
-.github/workflows/ci.yml
-PROJECT_STATE.md
-README.md
-app/__init__.py
-app/agent/__init__.py
-app/agent/contracts.py
-app/agent/composition.py
-app/agent/exceptions.py
-app/agent/model_client.py
-app/agent/orchestrator.py
-app/agent/providers/__init__.py
-app/agent/providers/deepseek_client.py
-app/agent/state.py
-app/agent/tools/__init__.py
-app/agent/tools/base.py
-app/agent/tools/job_query.py
-app/agent/tools/job_tools.py
-app/agent/tools/matching_tool.py
-app/agent/tools/registry.py
-app/api/__init__.py
-app/api/dependencies.py
-app/api/routes/__init__.py
-app/api/routes/agent.py
-app/api/routes/crawl.py
-app/api/routes/health.py
-app/api/routes/jobs.py
-app/crawlers/__init__.py
-app/crawlers/base.py
-app/crawlers/mock_crawler.py
-app/crawlers/oppo_crawler.py
-app/crawlers/oppo_source_client.py
-app/database/__init__.py
-app/database/job_query_adapter.py
-app/database/models.py
-app/database/repository.py
-app/database/session.py
-app/fixtures/sample_jobs.html
-app/main.py
-app/matching/__init__.py
-app/matching/contracts.py
-app/matching/matcher.py
-app/matching/service.py
-app/matching/skill_extractor.py
-app/schemas/__init__.py
-app/schemas/agent.py
-app/schemas/crawl_response.py
-app/schemas/health_response.py
-app/schemas/job.py
-app/schemas/job_response.py
-app/services/__init__.py
-app/services/cleaner.py
-app/services/deduplicator.py
-app/services/processor.py
-app/services/skill_vocabulary.py
-app/workflows/__init__.py
-app/workflows/job_ingestion.py
-demo/__init__.py
-demo/app.py
-demo/client.py
-demo/contracts.py
-demo/rendering.py
-docs/codex-workflow.md
-docs/development-log.md
-docs/stage-reviews/stage-01-review.md through stage-12-review.md
-docs/tasks/stage-08-task.md
-docs/tasks/stage-09-task.md
-docs/tasks/stage-10-task.md
-docs/tasks/stage-11-task.md
-docs/tasks/stage-12-task.md
-docs/tasks/stage-12e-task.md
-requirements.txt
-evals/__init__.py
-evals/contracts.py
-evals/dataset.py
-evals/runner.py
-evals/scorers.py
-evals/cases/agent_case.schema.json
-evals/cases/agent_cases.jsonl
-tests/agent/__init__.py
-tests/agent/fakes/__init__.py
-tests/agent/fakes/fake_model_client.py
-tests/agent/providers/__init__.py
-tests/agent/providers/test_deepseek_client.py
-tests/agent/test_agent_exceptions.py
-tests/agent/test_base_tool.py
-tests/agent/test_composition.py
-tests/agent/test_contracts.py
-tests/agent/test_job_tools.py
-tests/agent/test_matching_tool.py
-tests/agent/test_model_client.py
-tests/agent/test_orchestrator.py
-tests/agent/test_state.py
-tests/agent/test_tool_registry.py
-tests/database/test_job_query_adapter.py
-tests/demo/test_client.py
-tests/demo/test_contracts.py
-tests/demo/test_rendering.py
-tests/evaluation/__init__.py
-tests/evaluation/test_contracts.py
-tests/evaluation/test_dataset.py
-tests/evaluation/test_evaluation_gate.py
-tests/evaluation/test_runner.py
-tests/evaluation/test_scorers.py
-tests/matching/__init__.py
-tests/matching/test_contracts.py
-tests/matching/test_matcher.py
-tests/matching/test_service.py
-tests/matching/test_skill_extractor.py
-tests/test_agent_api.py
-tests/test_cleaner.py
-tests/test_crawl_api.py
-tests/test_database.py
-tests/test_database_session.py
-tests/test_deduplicator.py
-tests/test_health.py
-tests/test_job_api.py
-tests/test_job_detail_api.py
-tests/test_job_ingestion.py
-tests/test_job_query_repository.py
-tests/test_job_repository.py
-tests/test_job_response_schema.py
-tests/test_job_schema.py
-tests/test_mock_crawler.py
-tests/test_oppo_crawler.py
-tests/test_oppo_ingestion.py
-tests/test_oppo_source_client.py
-tests/test_processor.py
-tests/test_stage6_api_flow.py
-
-.venv、pytest temp directories、.pytest_cache、database temporary files 与 secrets 不属于 tree。
-
-# 15. Current Documentation and Development Workflow
-
-Current Stage documentation：docs/tasks/stage-12-task.md、docs/tasks/stage-12e-task.md、docs/tasks/stage-13-task.md、docs/tasks/stage-13-multi-agent-plan.md、docs/stage-reviews/stage-12-review.md、docs/stage-reviews/stage-11-review.md、docs/deployment.md、docs/development-log.md、docs/codex-workflow.md。
-
-长期工作方式：Architecture-First + Codex-Driven Implementation + Human Verification。
-
-Routine：Luna。High reasoning 用于 complex architecture、difficult debugging 和 Stage Final Read-Only Review。
-
-Codex Git restrictions remain unchanged：默认禁止 git add、git commit、git push、PR、merge 与 branch deletion。事实优先级为 Repository Reality > Task docs > Chat history。
-
-标准流：formal Planning from repository reality → feature branch → implementation → tests → Final Read-Only Review → Stage Review → Development Log → PR → merge → main regression → PROJECT_STATE → branch cleanup。
-
-Stage 13 documentation closeout is present in the working tree; no subsequent stage or goal has been defined。
+## 8. Security and Data Boundaries
+
+- Provider secrets 通过 environment variables 注入。
+- `.env` 被忽略，不提交真实密钥或 secret value。
+- `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 与 embedding credentials 均为 Backend-only configuration。
+- Demo 不接收 provider key。
+- 当前 SQLite persistence 使用本地数据库与 Compose named volume；默认 fixture 数据不代表实时招聘数据。
+
+## 9. Current Test Baseline
+
+Current verified Stage 13.5G evidence：
+
+- `tests/evaluation`: 95 passed。
+- `tests/agent`: 139 passed。
+- `tests/rag`: 58 passed。
+- Full suite: `710 passed in 16.64s`。
+
+Full-suite evidence 使用 fresh external basetemp，以绕过本机历史 pytest temp ACL 问题。该 Windows `WinError 5` 属于环境权限噪声，不是当前产品 test failure。当前 baseline 是 `710 passed`；旧的 `570 passed` 不再作为 current baseline。
+
+## 10. Known Limitations and Explicit Non-goals
+
+- `InMemoryVectorStore` 仅为 process-local index。
+- 没有 persistent external vector DB、distributed index 或其他持久向量数据库。
+- Retrieval rebuild 在 Agent dependency path 上惰性执行。
+- Embedding configuration 是 optional；缺少配置时 retrieval disabled。
+- 没有 persistent conversation memory。
+- 没有 Multi-Agent runtime 或 parallel tool execution。
+- 默认 crawler 使用本地 fixture；没有 live recruitment feed。
+- `/api/crawl` 不触发 OPPO real-source crawler；没有 public real-source HTTP trigger。
+- OPPO 依赖 observed website/internal endpoints，source schema 可能变化。
+- 当前没有 public production deployment。
+- `ControlledEmbeddingProvider` 的 controlled semantic CI 不等于真实 provider benchmark，不提供 general embedding quality guarantee。
+- SQLite 仍是当前数据库，暂无迁移系统；没有 scheduler、retry 或 partial-success policy。
+
+Semantic job retrieval 已实现，不应再把 RAG 或 retrieval 列为不存在的能力。
+
+## 11. Repository Inventory
+
+以下只列当前 snapshot 相关的真实 tracked paths，不列 `__pycache__`、pytest temporary directories、database files 或 secrets：
+
+- `app/rag/`
+  - `contracts.py`
+  - `document.py`
+  - `embedding.py`
+  - `retriever.py`
+  - `runtime.py`
+  - `vector_store.py`
+- `evals/`
+  - `retrieval_contracts.py`
+  - `retrieval_dataset.py`
+  - `retrieval_runner.py`
+  - `retrieval_scorers.py`
+  - `cases/retrieval_cases.jsonl`
+  - `cases/retrieval_case.schema.json`
+- `tests/rag/`
+  - `test_contracts.py`
+  - `test_document.py`
+  - `test_embedding.py`
+  - `test_openai_embedding.py`
+  - `test_retriever.py`
+  - `test_runtime.py`
+  - `test_vector_store.py`
+- `tests/evaluation/`
+  - `retrieval_fixtures.py`
+  - `test_agent_retrieval_gate.py`
+  - `test_retrieval_dataset.py`
+  - `test_retrieval_evaluation_gate.py`
+  - `test_retrieval_fixtures.py`
+  - `test_retrieval_runner.py`
+  - `test_retrieval_scorers.py`
+- Agent retrieval integration：
+  - `app/agent/tools/retrieval_tool.py`
+  - `app/agent/composition.py`
+  - `app/api/dependencies.py`
+  - `app/main.py`
+- `docs/tasks/stage-13.5-task.md`
+- `docs/tasks/stage-13.5g-retrieval-evaluation-task.md`
+- `docs/deployment.md`
+- `docker-compose.yml`
+- `.github/workflows/ci.yml`
+
+Current documentation state：
+
+- README Stage 13.5 updated。
+- `docs/deployment.md` Stage 13.5 updated。
+- `PROJECT_STATE.md` is being updated in H-C。
+- Stage 13.5 review 尚未创建（属于 H-D）。
+- `docs/development-log.md` 尚未追加 Stage 13.5（属于 H-D）。
+
+## 12. Long-term Engineering Constraints
+
+- Deterministic business logic stays outside the LLM。
+- Agent orchestrates tools; it does not own the database or business rules。
+- `ModelClient` abstraction isolates real providers。
+- Tool contracts remain explicit and provider-neutral。
+- Real providers remain optional where possible; offline tests stay deterministic。
+- Retrieval supplements deterministic matching and does not replace its score。
+- Provider secrets stay Backend-only。
+- CI uses deterministic offline tests and validation gates。
+- Preserve backward compatibility, especially the retrieval-disabled three-tool path。
+- Avoid framework inflation without a demonstrated requirement。
