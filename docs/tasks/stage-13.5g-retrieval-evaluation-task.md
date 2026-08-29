@@ -716,4 +716,3 @@ Stage 13.5G is complete only when:
 - no API key, network, or DB dependency exists;
 - no protected production architecture is changed;
 - no CI workflow change is made without clear evidence and justification.
-

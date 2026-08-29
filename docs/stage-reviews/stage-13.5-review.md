@@ -612,4 +612,3 @@ Stage 13.5 implementation and Stage 13.5G evaluation are complete. Stage 13.5H
 closeout is in progress, with this review documenting the architecture,
 trade-offs, lessons, and claim boundaries. The v1.1.0 closeout is not yet a
 release claim.
-
