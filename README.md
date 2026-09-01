@@ -10,6 +10,30 @@
 
 **Current portfolio release: `v1.1.0`**
 
+## Product Preview
+
+<p align="center">
+  <img
+    src="docs/assets/internscout-demo.png"
+    alt="InternScout Agent Streamlit product demo"
+    width="900"
+  />
+</p>
+
+The demo shows the end-to-end flow from candidate input to Agent explanation and deterministic job recommendations.
+
+## Product Preview
+
+<p align="center">
+  <img
+    src="docs/assets/internscout-demo.png"
+    alt="InternScout Agent Streamlit product demo"
+    width="900"
+  />
+</p>
+
+The demo shows the end-to-end flow from candidate input to Agent explanation and deterministic job recommendations.
+
 InternScout Agent 是一个面向招聘岗位发现与候选人匹配场景构建的 AI Agent 应用。
 
 它不是单纯的 LLM API Demo，也不是只有数据采集功能的招聘爬虫。项目从真实岗位数据 pipeline 出发，将 **岗位采集、数据清洗、数据库、FastAPI、Agent Tool Calling、确定性岗位匹配、Semantic Retrieval、Evaluation、CI、Streamlit Demo 和 Docker Compose** 组合成一套完整、可测试、可复现的 AI 应用工程链路。
@@ -676,7 +700,8 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
 启动 Streamlit：
 
 ```powershell
-streamlit run demo/app.py
+$env:PYTHONPATH = (Get-Location).Path
+python -m streamlit run demo/app.py
 ```
 
 ---
