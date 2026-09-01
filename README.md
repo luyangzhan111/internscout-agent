@@ -1,323 +1,878 @@
 # InternScout Agent
 
-> An AI Agent application for internship discovery, job data processing, and candidate-job matching.
->
-> Current portfolio version: **v1.1.0**
+> An AI Agent application for internship discovery, job data processing, explainable candidate-job matching, and semantic job knowledge retrieval.
 
-## Project Overview
+[![CI](https://github.com/luyangzhan111/internscout-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/luyangzhan111/internscout-agent/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/luyangzhan111/internscout-agent)](https://github.com/luyangzhan111/internscout-agent/releases/tag/v1.1.0)
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Agent%20Backend-green)
+![Tests](https://img.shields.io/badge/tests-710%20passed-brightgreen)
 
-InternScout Agent 不是一个普通的爬虫脚本，而是一个把岗位数据 pipeline 作为基础能力、再由 Agent Runtime 完成查询、工具调用与候选人匹配的 AI Agent 应用。项目展示了从 internship crawling pipeline、数据清洗与标准化，到 FastAPI backend、Agent orchestration、tool calling、candidate-job matching、agent evaluation、Docker deployment 和 CI validation 的完整工程链路。
+**Current portfolio release: `v1.1.0`**
 
-项目当前完成 Stage 13.5，并已通过 PR #14 merge into `main`，形成 v1.1.0 release line。Stage 11 完成确定性候选人 / 岗位匹配能力，Stage 12 完成 Agent Evaluation 与 CI validation，Stage 13 完成 Docker Compose 本地部署、Product Demo 与 release preparation，Stage 13.5 增加岗位知识语义检索层，并保留 OPPO Careers 数据源适配验证能力。
+InternScout Agent 是一个面向招聘岗位发现与候选人匹配场景构建的 AI Agent 应用。
 
-项目当前定位为可复现、可测试、可解释的本地产品原型与公开 portfolio 项目。默认 Demo 使用本地 SQLite 和 Mock 数据；OPPO Careers 数据源适配验证能力，不代表 Demo 默认读取实时招聘网站。
+它不是单纯的 LLM API Demo，也不是只有数据采集功能的招聘爬虫。项目从真实岗位数据 pipeline 出发，将 **岗位采集、数据清洗、数据库、FastAPI、Agent Tool Calling、确定性岗位匹配、Semantic Retrieval、Evaluation、CI、Streamlit Demo 和 Docker Compose** 组合成一套完整、可测试、可复现的 AI 应用工程链路。
 
-## Features
+项目的核心设计原则之一是：
 
-- **Internship crawling pipeline**：岗位采集、领域映射、处理、去重、持久化与查询的完整链路。
-- **MockJobCrawler**：从本地 sample HTML 读取岗位，支持稳定、离线的开发和测试。
-- **OPPO Careers real source**：通过 `OppoJobSourceClient` 与 `OppoJobCrawler` 接入 OPPO Careers 的岗位发现和详情数据。
-- **Data cleaning and normalization**：规范化公司、城市和技能字段，并在写入前执行去重。
-- **SQLite persistence**：通过 Repository 与 SQLAlchemy 将岗位持久化到 SQLite。
-- **FastAPI backend**：提供健康检查、Mock 采集、岗位列表、岗位详情和 Agent 查询接口。
-- **Agent orchestration**：provider-neutral、request-scoped 的顺序工具调用运行时。
-- **Tool calling**：通过 `ToolRegistry` 暴露三个默认岗位工具，并在 retrieval ready 时增加可选的岗位知识检索工具。
-- **Candidate-job matching**：确定性、可解释的匹配分数、已匹配技能、缺失技能、城市过滤和稳定排序。
-- **Job knowledge retrieval**：将非结构化岗位描述转换为 `JobDocument`，通过 embedding 和向量搜索提供语义证据。
-- **Provider-neutral retrieval abstractions**：`EmbeddingProvider`、`VectorStore`、`JobKnowledgeRetriever` 和可选的 `RetrievalRuntime`。
-- **In-memory vector search**：使用 cosine similarity 和稳定 tie behavior 的 `InMemoryVectorStore`；它不是持久化 vector database。
-- **Optional Agent retrieval tool**：retrieval ready 时注册 `retrieve_job_knowledge`，否则 Agent 保持默认三工具。
-- **Production-compatible embeddings**：通过 OpenAI-compatible embedding provider 配置 Bailian-compatible endpoint。
-- **Agent evaluation**：离线、确定性的 evaluation dataset、runner 和 scorers，用于验证工具选择、参数、结果和回答事实。
-- **Retrieval evaluation**：6 个 direct retrieval cases、2 个 Agent retrieval cases，以及 Hit@K / Top-1 ranking gate。
-- **DeepSeek Provider**：通过独立 Provider Adapter 对接 DeepSeek API，由 Agent Runtime 使用工具结果生成回答。
-- **Docker deployment**：使用独立 Backend 与 Streamlit Demo 容器提供可复现的 Docker Compose 本地部署方式，并通过 named volume 持久化 SQLite；embedding provider 配置只传入 Backend。
-- **CI validation**：GitHub Actions 执行 pytest、Docker Compose 配置校验和 Docker 镜像构建校验。
+> **Semantic Retrieval 负责提供非结构化语义证据，Deterministic Matching 负责结构化、稳定、可解释的最终匹配逻辑。两者互补，而不是互相替代。**
 
-## Agent Layer
+---
 
-Agent Layer 位于 `app/agent/`，核心组件包括：
+## Highlights
 
-- `AgentOrchestrator`：驱动单次 Agent run，在模型响应与工具执行之间进行编排。
-- `ToolRegistry`：注册并解析 Agent 可调用的工具。
-- `SearchJobsTool`：按城市、公司、技能和分页条件查询岗位。
-- `GetJobDetailTool`：按岗位 ID 获取单个岗位详情。
-- `MatchJobsTool`：验证候选人匹配输入，并委托确定性匹配服务返回结构化结果。
-- `RetrieveJobKnowledgeTool`：仅在 retriever 可用时注册，根据自然语言查询返回岗位知识检索结果。
+| Area | Implementation |
+| --- | --- |
+| **Agent Runtime** | `AgentOrchestrator` + `ToolRegistry`，模型驱动工具选择与顺序执行 |
+| **Tool Calling** | 岗位搜索、岗位详情、候选人匹配，以及按需启用的语义检索工具 |
+| **Real Job Source** | OPPO Careers 招聘源 Adapter |
+| **Candidate Matching** | 确定性技能提取、匹配评分、缺失技能分析、城市过滤、稳定排序 |
+| **Semantic Retrieval** | `JobDocument` + `EmbeddingProvider` + `VectorStore` + cosine similarity |
+| **Retrieval Runtime** | lazy indexing + dirty tracking + build-then-swap |
+| **LLM Provider** | DeepSeek Responses API Adapter |
+| **Evaluation** | Deterministic Agent Evaluation + Retrieval Evaluation |
+| **Backend** | FastAPI + SQLAlchemy + SQLite |
+| **Product Demo** | Streamlit |
+| **Deployment** | Docker Compose local deployment |
+| **Quality** | GitHub Actions CI + **710 passed** release regression |
 
-默认 Agent tools 为 `search_jobs`、`get_job_detail`、`match_jobs`；retrieval runtime ready 时增加第四个 `retrieve_job_knowledge`。当前 Agent run 不保留跨请求会话状态，工具按顺序执行。
+---
 
-## Candidate Matching
+## What It Does
 
-Stage 11 加入了确定性、可测试的候选人 / 岗位匹配能力：
+InternScout Agent 支持从岗位数据进入系统，到 Agent 为候选人查询和分析岗位的完整流程。
 
-- `CandidateProfile`：验证并规范化候选人技能与意向城市。
-- `JobSkillExtractor`：从岗位 structured skills、title 和 description 中提取确定性技能证据。
-- `CandidateMatcher`：计算 matched skills、missing skills、匹配分数与解释原因。
-- `JobMatchingService`：读取候选岗位，执行城市过滤、匹配、稳定排序和结果截断。
-- **deterministic matching**：相同输入和岗位数据产生一致结果。
-- **explainable score**：分数由可测试的应用逻辑计算，不由模型生成。
-- **missing skill analysis**：明确返回已匹配技能与缺失技能。
-- **city filtering**：按规范化后的候选人意向城市筛选符合条件的岗位。
+### 1. Job Data Pipeline
 
-`MatchJobsTool` 只负责 Agent Tool 边界与服务委托；技能提取、评分和排序逻辑保留在 matching layer。
+项目实现岗位数据的：
+
+```text
+Collection
+    ↓
+Parsing
+    ↓
+Cleaning
+    ↓
+Normalization
+    ↓
+Deduplication
+    ↓
+Persistence
+    ↓
+Query
+```
+
+目前支持两类数据来源：
+
+- `MockJobCrawler`：读取本地 sample HTML，用于稳定、离线、可复现的开发和测试。
+- OPPO Careers Adapter：通过 `OppoJobSourceClient` 与 `OppoJobCrawler` 验证真实招聘源采集链路。
+
+经过清洗与标准化后的岗位数据通过 SQLAlchemy 持久化到 SQLite，并由 FastAPI 与 Agent Tool 层进一步消费。
+
+---
+
+### 2. Agent Tool Calling
+
+Agent Layer 位于 `app/agent/`。
+
+核心运行时由以下组件组成：
+
+```text
+DeepSeek Provider
+       ↑
+       |
+AgentOrchestrator
+       |
+       v
+ ToolRegistry
+       |
+       +-----------------------+
+       |           |           |
+       v           v           v
+ search_jobs  get_job_detail  match_jobs
+                              
+                + optional
+                    |
+                    v
+        retrieve_job_knowledge
+```
+
+默认 Agent Tools：
+
+- `search_jobs`
+- `get_job_detail`
+- `match_jobs`
+
+当 Semantic Retrieval Runtime 可用时，会额外注册：
+
+- `retrieve_job_knowledge`
+
+Agent 每次请求独立运行。
+
+当前 Tool Calling Runtime 保持**顺序执行**，不执行 Multi-Agent 或 parallel tool runtime。
+
+---
+
+## Candidate-Job Matching
+
+岗位匹配采用确定性应用逻辑，而不是让 LLM 直接生成一个不可验证的匹配分数。
+
+核心组件包括：
+
+### `CandidateProfile`
+
+负责候选人技能与意向城市输入的验证和标准化。
+
+### `JobSkillExtractor`
+
+根据岗位中的：
+
+- structured skills
+- title
+- description
+
+提取确定性的技能证据，并执行技能 alias normalization 与去重。
+
+### `CandidateMatcher`
+
+根据候选人技能与岗位技能证据计算：
+
+- matched skills
+- missing skills
+- match score
+- match reasons
+
+### `JobMatchingService`
+
+负责：
+
+```text
+Candidate
+    ↓
+City Filtering
+    ↓
+Skill Evidence Extraction
+    ↓
+Deterministic Matching
+    ↓
+Stable Ranking
+    ↓
+Top Results
+```
+
+这一设计保证：
+
+- 相同输入得到稳定结果；
+- 匹配分数可以测试；
+- 推荐原因可以解释；
+- 缺失技能可以明确展示；
+- LLM 不负责最终匹配评分。
+
+---
 
 ## Semantic Job Knowledge Retrieval
 
-Stage 13.5 将两类能力保持为互补边界：
-
-- **Structured deterministic matching**：structured fields → deterministic skill extraction → deterministic matching score。
-- **Semantic job knowledge retrieval**：unstructured job descriptions → `JobDocument` → `EmbeddingProvider` → `VectorStore` → `JobKnowledgeRetriever` → `retrieve_job_knowledge`。
-
-Retrieval adds semantic evidence. It does not replace deterministic candidate-job matching, scoring, city filtering, or ranking logic.
-
-The production adapter uses an OpenAI-compatible embeddings API and can be configured for a Bailian-compatible endpoint. The CI semantic fixture is controlled and repository-specific; it is not a general embedding-quality benchmark.
-
-## Streamlit Demo
-
-项目提供一个轻量的 Streamlit Product Demo，用于展示现有 Agent 能力和完整的请求链路。
-
-- 用户输入候选人技能和意向城市。
-- Demo 通过 FastAPI 调用 Agent，不直接访问 Agent Runtime、数据库或 Matching Service。
-- 页面展示推荐岗位、匹配分数、已匹配技能、缺失技能和 Agent 推荐解释。
-- Demo 在 local Python development mode 下通过 `http://127.0.0.1:8000` 调用单独运行的 Backend；在 Docker Compose local mode 下通过 Compose 网络中的 `http://backend:8000` 调用 Backend。
-- 两种模式都使用本地 SQLite / MockJobCrawler 数据；这些 Demo 数据不是实时招聘网站数据。
-- Demo 当前没有独立 retrieval UI；岗位知识检索通过 Agent tool 使用。
-- OPPO real-source ingestion capability 是独立的数据采集能力，不等同于 Demo 默认数据来源。
-- 项目提供本地 Docker Compose 运行方式，但没有 public production deployment。
-
-## Architecture
-
-Product Demo flow:
-
-```text
-User
- |
-Streamlit Demo
- |
-FastAPI
- |
-Agent Runtime
- |
-Tools
- |
-Matching
- |
-Database
-```
-
-```text
-Local sample HTML                         OPPO Careers
-        |                                      |
-        v                                      v
- MockJobCrawler                    OppoJobSourceClient
-        |                                      |
-        |                               OppoJobCrawler
-        |                                      |
-        +---------------> JobCreate <----------+
-                               |
-                               v
-                  Cleaning + Deduplication
-                               |
-                               v
-                    Repository / SQLAlchemy
-                               |
-                               v
-                            SQLite
-                               |
-              +----------------+----------------+
-              |                                 |
-              v                                 v
-         REST Jobs API                      JobQueryPort
-                                                |
-                         +----------------------+------------------+
-                         |                      |                  |
-                         v                      v                  v
-                  SearchJobsTool       GetJobDetailTool   MatchJobsTool
-                                                                  |
-                                                                  v
-                                                       JobMatchingService
-                                                        /               \
-                                                       v                 v
-                                               JobSkillExtractor  CandidateMatcher
-                         \                      |                  /
-                          +---------------------+-----------------+
-                                                |
-                                                v
-                                         ToolRegistry
-                                                |
-                                                v
-                                        AgentOrchestrator
-                                                |
-                                                v
-                                      DeepSeek Provider Adapter
-                                                |
-                                                v
-                                            DeepSeek API
-```
-
-Retrieval branch:
+为了处理岗位 description 等非结构化信息，项目在确定性匹配之外增加了一条独立的 Semantic Retrieval 路径。
 
 ```text
 Job Database
-    |
-    +--------------------------+
-    |                          |
-    v                          v
-Structured Query          JobDocument
-    |                          |
-    v                          v
-Deterministic          EmbeddingProvider
-Matching Score               |
-                               v
-                          VectorStore
-                               |
-                               v
-                     JobKnowledgeRetriever
-                               |
-                               v
-                    retrieve_job_knowledge
-                               |
-                               v
-                       AgentOrchestrator
+     |
+     v
+ JobDocument
+     |
+     v
+EmbeddingProvider
+     |
+     v
+ VectorStore
+     |
+     v
+JobKnowledgeRetriever
+     |
+     v
+retrieve_job_knowledge
+     |
+     v
+AgentOrchestrator
 ```
 
-`RetrievalRuntime` is optional and process-local. FastAPI startup constructs it without embedding all jobs. On an Agent request, a dirty or unready runtime collects the current job snapshot and rebuilds lazily. Successful crawl ingestion calls `mark_dirty()`; it does not embed during crawl. Rebuild uses build-then-swap: a successful new index replaces the current retriever, while a failed refresh keeps the old retriever dirty. A failed initial rebuild leaves the Agent with the default three tools.
+核心抽象包括：
 
-DeepSeek uses the Responses API with `reasoning={"effort": "none"}` for tool compatibility. If the provider returns multiple function calls, InternScout projects the provider-order first call, executes one tool, and lets the next model turn replan. The runtime remains sequential; it does not execute tools in parallel.
+- `JobDocument`
+- `EmbeddingProvider`
+- `VectorStore`
+- `JobKnowledgeRetriever`
+- `RetrievalRuntime`
 
-## REST API
+当前默认向量实现为：
 
-- `GET /`：服务入口。
-- `GET /api/health`：服务与数据库健康检查。
-- `POST /api/crawl`：执行 `MockJobCrawler` 采集。
-- `GET /api/jobs`：筛选并分页查询岗位。
-- `GET /api/jobs/{job_id}`：获取岗位详情。
-- `POST /api/agent/query`：触发一次独立的 Agent run。
-
-岗位知识检索通过 Agent tool 提供，没有新增独立 retrieval HTTP endpoint。
-
-`POST /api/crawl` 当前仅用于 Mock 采集。真实 OPPO 数据链路通过显式组合调用，尚未暴露为公共 HTTP 采集入口。OPPO source 使用招聘网站观察到的内部接口，其 schema 可能发生变化。
-
-准备本地 Demo 数据时，先启动 FastAPI，再调用 `POST /api/crawl`。该 endpoint 使用 `MockJobCrawler` 采集本地 sample HTML 并写入 SQLite，不会抓取实时招聘网站数据：
-
-```powershell
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
+```text
+InMemoryVectorStore
+        +
+Cosine Similarity
 ```
+
+项目同时提供 OpenAI-compatible embedding provider adapter，可配置兼容 endpoint。
+
+### Matching vs Retrieval
+
+这两个能力被刻意保持为两条不同路径：
+
+```text
+Structured Job Data
+        |
+        v
+Deterministic Skill Evidence
+        |
+        v
+Candidate Matching
+        |
+        v
+Explainable Match Score
+```
+
+与：
+
+```text
+Unstructured Job Description
+        |
+        v
+Embedding
+        |
+        v
+Vector Search
+        |
+        v
+Semantic Evidence
+```
+
+因此：
+
+**Retrieval adds semantic evidence. It does not replace deterministic candidate-job matching.**
+
+Semantic similarity 不直接决定候选人与岗位的最终匹配分数。
+
+---
+
+## Retrieval Runtime Design
+
+Semantic Retrieval 使用 process-local `RetrievalRuntime` 管理索引生命周期。
+
+它没有在 FastAPI 启动时立即 embedding 全部岗位，而采用 lazy rebuild：
+
+```text
+Application Startup
+       |
+       v
+RetrievalRuntime
+   unready / dirty
+       |
+       | first retrieval request
+       v
+Collect Job Snapshot
+       |
+       v
+Build New Index
+       |
+       v
+Successful?
+   /        \
+ yes        no
+  |          |
+  v          v
+Swap      Keep Old
+Index     Retriever
+```
+
+岗位数据发生变化后，只调用：
+
+```text
+mark_dirty()
+```
+
+而不是在 crawl / ingestion 路径中立即执行 embedding。
+
+刷新采用 **build-then-swap**：
+
+- 新索引成功构建后才替换当前 retriever；
+- refresh 失败时保留旧 retriever；
+- 初始构建失败时，Agent 仍可继续使用默认三个非 Retrieval Tools。
+
+这样可以将核心 Agent 能力与可选 Semantic Retrieval 能力解耦。
+
+---
+
+## System Architecture
+
+```text
+                         ┌───────────────────┐
+                         │   Streamlit Demo  │
+                         └─────────┬─────────┘
+                                   │
+                                   v
+                         ┌───────────────────┐
+                         │      FastAPI      │
+                         └─────────┬─────────┘
+                                   │
+                                   v
+                        ┌─────────────────────┐
+                        │ AgentOrchestrator   │
+                        └─────────┬───────────┘
+                                  │
+                                  v
+                           ┌──────────────┐
+                           │ ToolRegistry │
+                           └──────┬───────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+              v                   v                   v
+       Search / Detail      MatchJobsTool     Retrieval Tool
+              │                   │                   │
+              │                   v                   v
+              │          JobMatchingService   JobKnowledgeRetriever
+              │                   │                   │
+              │          ┌────────┴────────┐          v
+              │          │                 │     VectorStore
+              │          v                 v          │
+              │   JobSkillExtractor  CandidateMatcher│
+              │                                      v
+              │                              EmbeddingProvider
+              │
+              └───────────────────┬───────────────────┘
+                                  │
+                                  v
+                        ┌─────────────────────┐
+                        │ Job Query / Storage │
+                        └─────────┬───────────┘
+                                  │
+                                  v
+                         SQLAlchemy / SQLite
+                                  ▲
+                                  │
+             ┌────────────────────┴────────────────────┐
+             │                                         │
+             v                                         v
+      MockJobCrawler                            OPPO Careers
+                                             Source Adapter
+```
+
+---
+
+## End-to-End Data Flow
+
+```text
+Local Sample HTML                      OPPO Careers
+       |                                    |
+       v                                    v
+MockJobCrawler                     OppoJobSourceClient
+       |                                    |
+       |                              OppoJobCrawler
+       |                                    |
+       +--------------> JobCreate <---------+
+                            |
+                            v
+                 Cleaning + Normalization
+                            |
+                            v
+                      Deduplication
+                            |
+                            v
+                 Repository / SQLAlchemy
+                            |
+                            v
+                         SQLite
+                            |
+              +-------------+-------------+
+              |                           |
+              v                           v
+        REST Jobs API                Agent Tools
+                                          |
+                                          v
+                                  AgentOrchestrator
+                                          |
+                                          v
+                                   DeepSeek Provider
+```
+
+---
+
+## Product Demo
+
+项目提供 Streamlit Product Demo，用于展示实际的：
+
+```text
+User
+ ↓
+Streamlit
+ ↓
+FastAPI
+ ↓
+Agent Runtime
+ ↓
+Tools
+ ↓
+Matching / Retrieval
+ ↓
+Job Data
+```
+
+Demo 支持用户输入：
+
+- candidate skills
+- preferred city
+
+并展示：
+
+- 推荐岗位
+- match score
+- matched skills
+- missing skills
+- Agent recommendation / explanation
+
+Demo 不直接访问数据库、Matching Service 或 Agent Runtime，而始终通过 FastAPI 与后端交互。
+
+当前 Product Demo 使用本地 SQLite / MockJobCrawler 数据，不代表实时招聘网站内容。
+
+项目目前提供本地运行与 Docker Compose 部署方式，**没有 public production deployment**。
+
+---
+
+## Evaluation & Testing
+
+InternScout Agent 不仅验证“程序能否运行”，还针对 Agent 与 Retrieval 行为建立了 deterministic evaluation。
+
+### Release Regression
+
+`v1.1.0` release regression：
+
+```text
+710 passed
+```
+
+其中包括：
+
+```text
+tests/evaluation    95 passed
+tests/agent        139 passed
+tests/rag           58 passed
+```
+
+---
+
+### Agent Evaluation
+
+Agent Evaluation 使用离线、确定性的 evaluation dataset、runner 和 scorers。
+
+当前覆盖 **9 个 deterministic Agent cases**，包括：
+
+- tool selection
+- tool sequence
+- tool arguments
+- tool results
+- execution outcome
+- answer facts
+- empty results
+- invalid arguments
+- missing job
+- unknown tool
+
+Evaluation 不依赖实时 LLM judge。
+
+---
+
+### Retrieval Evaluation
+
+Semantic Retrieval Evaluation 包括：
+
+- **6 个 direct retrieval cases**
+- **2 个 Agent retrieval integration cases**
+
+Direct evaluation 验证：
+
+- Hit@K
+- Top-1 ranking
+
+Agent integration evaluation 则通过真实 Agent loop 验证：
+
+```text
+Agent
+ ↓
+retrieve_job_knowledge
+ ↓
+Retriever
+ ↓
+Tool Result
+ ↓
+Agent Response
+```
+
+CI 中使用的 semantic fixture 是受控、repository-specific 的 deterministic regression fixture。
+
+它用于验证系统行为稳定性，**不代表真实 embedding model 的通用质量 benchmark**。
+
+---
+
+## CI
+
+GitHub Actions 持续验证：
+
+```text
+pytest regression
+        +
+docker compose config validation
+        +
+Docker image build validation
+```
+
+Blocking CI 保持：
+
+- offline
+- deterministic
+- secret-free
+- network-free
+
+因此 CI 不依赖实时 DeepSeek API 或真实 Embedding API。
+
+---
 
 ## Tech Stack
+
+### Backend
 
 - Python 3.12
 - FastAPI
 - SQLAlchemy 2.x
 - SQLite
 - Pydantic
-- pytest
 - httpx
+
+### Agent / AI
+
+- AgentOrchestrator
+- ToolRegistry
+- DeepSeek Responses API
+- Tool Calling
+- EmbeddingProvider abstraction
+- VectorStore abstraction
+- Cosine Similarity
+- Semantic Retrieval
+
+### Quality
+
+- pytest
+- Deterministic Agent Evaluation
+- Retrieval Evaluation
+- GitHub Actions CI
+
+### Product & Deployment
+
 - Streamlit
-- DeepSeek API
-- OpenAI-compatible Embeddings API
+- Docker
+- Docker Compose
 
-## Local Development
+---
 
-创建并激活 Python 虚拟环境，然后安装依赖：
+## REST API
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/` | Service entry |
+| `GET` | `/api/health` | Service and database health |
+| `POST` | `/api/crawl` | Run local MockJobCrawler ingestion |
+| `GET` | `/api/jobs` | Filter and paginate jobs |
+| `GET` | `/api/jobs/{job_id}` | Get job detail |
+| `POST` | `/api/agent/query` | Execute one Agent run |
+
+Semantic Job Knowledge Retrieval 当前作为 Agent Tool 提供，没有额外暴露独立 Retrieval HTTP endpoint。
+
+`POST /api/crawl` 当前只执行 Mock 数据采集。
+
+OPPO real-source ingestion 通过独立 source adapter / composition 使用，目前没有暴露公共 HTTP trigger。
+
+---
+
+## Quick Start
+
+### Option 1 — Docker Compose
+
+Clone repository:
+
+```bash
+git clone https://github.com/luyangzhan111/internscout-agent.git
+cd internscout-agent
 ```
 
-启动 FastAPI 服务：
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-启动 Streamlit Demo：
-
-```powershell
-streamlit run demo/app.py
-```
-
-使用真实 DeepSeek Provider 前，需要将 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_MODEL` 注入当前进程。要启用 semantic retrieval，还需要 `INTERNSCOUT_EMBEDDING_API_KEY` 和 `INTERNSCOUT_EMBEDDING_BASE_URL`；`INTERNSCOUT_EMBEDDING_MODEL` 默认是 `text-embedding-v4`，`INTERNSCOUT_EMBEDDING_DIMENSIONS` 默认是 `1024`。直接运行 Python 时不会自动加载 `.env` 文件；Docker Compose 会读取项目根目录的 `.env`。
-
-Embedding configuration is optional for the application. If the embedding API key or base URL is missing or invalid, FastAPI still starts and the Agent exposes `search_jobs`、`get_job_detail`、`match_jobs` 三个默认工具。
-
-## Quick Start (Docker Compose)
-
-Docker Compose 提供 Backend 与 Streamlit Demo 的本地容器运行方式。需要安装 Docker Engine 与 Docker Compose plugin，并准备一个不包含真实密钥的 `.env` 配置文件：
+创建环境变量文件：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-编辑 `.env` 后，可先校验 Compose 配置，再构建并启动服务：
+根据需要填写 DeepSeek / Embedding 配置。
 
-```powershell
+校验 Docker Compose：
+
+```bash
 docker compose config --quiet
+```
+
+启动：
+
+```bash
 docker compose up --build
 ```
 
-容器启动后，在另一个终端初始化本地 Demo 岗位数据：
+启动后初始化本地 Demo 数据：
 
 ```powershell
 Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
 ```
 
-访问地址：
+访问：
 
-- FastAPI Backend：`http://127.0.0.1:8000`
-- Streamlit Demo：`http://127.0.0.1:8501`
+```text
+FastAPI Backend
+http://127.0.0.1:8000
 
-Backend 启动时会自动创建缺失的 SQLite 表。Compose 使用 `backend_data` named volume 保存 `/data/internscout.db`，因此普通 `docker compose down` 不会删除数据库数据；`docker compose down -v` 会删除该 volume。
-
-完整的环境变量、启动、停止、数据初始化和故障排查说明见 [`docs/deployment.md`](docs/deployment.md)。
-
-## Project Highlights
-
-- **Agent Runtime**：provider-neutral、request-scoped 的顺序工具调用运行时。
-- **Tool Calling**：通过 ToolRegistry 连接默认岗位查询、岗位详情和匹配能力，并按需连接 retrieval tool。
-- **Deterministic Matching**：提供稳定、可测试、可解释的匹配分数和技能分析。
-- **Semantic Job Retrieval**：提供 provider-neutral embedding/vector abstractions、JobDocument pipeline 和 semantic job knowledge retrieval。
-- **Retrieval Lifecycle**：使用 process-local、lazy、build-then-swap 的 RetrievalRuntime 管理索引刷新。
-- **Retrieval Evaluation**：使用受控 fixture 验证 deterministic Hit@K / Top-1 ranking，不把它当作真实 embedding benchmark。
-- **Evaluation Framework**：使用离线、确定性的评估场景验证 Agent 行为。
-- **CI**：通过 GitHub Actions 自动执行 pytest 回归、`docker compose config` 配置校验和 Docker 镜像构建校验；阻塞 CI 不依赖实时 DeepSeek 调用。
-- **Product Demo**：使用 Streamlit 展示 User → FastAPI → Agent Runtime 的实际产品链路。
-
-Product Demo 当前支持单独 Python 进程和 Docker Compose 两种本地运行方式；Docker Compose 会将 DeepSeek 和 embedding provider 配置传给 Backend，不会传给 Demo。项目未部署到公网或生产环境。
-
-## Evaluation and Testing
-
-Verified Stage 13.5 product regression baseline：
-
-- **710 passed**
-- `tests/evaluation`: **95 passed**
-- `tests/agent`: **139 passed**
-- `tests/rag`: **58 passed**
-
-这里的 710-pass full-suite result 是 reviewed Stage 13.5 feature / pre-merge product baseline。PR #14 GitHub Actions 已成功，merge 后 `main` tree 与 reviewed feature head 一致，post-merge targeted evaluation 与 Agent/RAG suites 通过；本机 post-merge full rerun 受 Windows temporary-directory / SQLite ACL 限制，不把该环境错误描述为 product regression。
-
-运行测试：
-
-```powershell
-python -m pytest tests -q -p no:cacheprovider --basetemp <fresh external directory>
+Streamlit Demo
+http://127.0.0.1:8501
 ```
 
-Stage 12 deterministic Agent evaluation 使用 9 个 cases 和 `execution_outcome`、`tool_selection`、`tool_sequence`、`tool_arguments`、`tool_results`、`answer_facts` metrics。Stage 13.5 direct retrieval evaluation 使用 6 个 cases，通过 `ControlledEmbeddingProvider` 和 production `JobKnowledgeRetriever` 验证 Hit@K 与 Top-1；Agent retrieval integration evaluation 使用 2 个 `FakeModelClient` scripted cases 通过真实 Agent loop 验证 tool integration。
+完整部署说明：
 
-这些 blocking CI gates 保持 offline、deterministic、secret-free、network-free，不使用 LLM judge、MRR 或 real embedding benchmark。GitHub Actions 还会独立执行 Docker Compose 配置和镜像构建校验。
+[`docs/deployment.md`](docs/deployment.md)
 
-## Current Boundaries
+---
 
-- SQLite 是当前唯一数据库，没有数据库迁移系统。
-- `POST /api/crawl` 仍是 Mock-specific，不会触发真实 OPPO crawler。
-- OPPO 接入依赖网站内部接口，外部 schema 变化可能要求更新 source adapter。
-- Agent 每次请求独立运行，不提供持久会话。
-- Tool Calling 当前仅支持顺序执行。
-- `InMemoryVectorStore` 是 process-local index，不是持久化 external vector database。
-- Retrieval rebuild 是 lazy 的；embedding config 缺失时 retrieval optional disabled。
-- `ControlledEmbeddingProvider` 只用于受控 semantic regression，不保证真实 embedding 的通用质量。
-- 当前没有 retry、partial-success policy、真实 source HTTP trigger 或分布式采集。
-- Product Demo 默认消费 local SQLite / MockJobCrawler 数据，不代表实时招聘网站数据；Demo 可通过 Python 或 Docker Compose 在本地运行，但未部署到公网或生产环境。
+### Option 2 — Local Python
+
+创建虚拟环境：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+安装依赖：
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+启动 FastAPI：
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+初始化本地岗位数据：
+
+```powershell
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
+```
+
+启动 Streamlit：
+
+```powershell
+streamlit run demo/app.py
+```
+
+---
+
+## Provider Configuration
+
+使用真实 DeepSeek Provider 时需要配置：
+
+```text
+DEEPSEEK_API_KEY
+DEEPSEEK_MODEL
+```
+
+启用 Semantic Retrieval 时还需要：
+
+```text
+INTERNSCOUT_EMBEDDING_API_KEY
+INTERNSCOUT_EMBEDDING_BASE_URL
+```
+
+默认配置：
+
+```text
+INTERNSCOUT_EMBEDDING_MODEL=text-embedding-v4
+INTERNSCOUT_EMBEDDING_DIMENSIONS=1024
+```
+
+Embedding configuration 是可选能力。
+
+如果 Embedding Provider 没有配置或不可用：
+
+- FastAPI 仍然可以启动；
+- Agent 仍然提供默认三个 Tools：
+  - `search_jobs`
+  - `get_job_detail`
+  - `match_jobs`
+
+只有 Retrieval Runtime ready 时才加入：
+
+```text
+retrieve_job_knowledge
+```
+
+---
+
+## Project Structure
+
+```text
+internscout-agent/
+│
+├── app/
+│   ├── agent/              # Agent runtime, tools, providers
+│   ├── database/           # SQLAlchemy, repositories, query adapters
+│   ├── matching/           # Candidate-job deterministic matching
+│   ├── rag/                # Semantic retrieval and vector abstractions
+│   ├── routers/            # FastAPI endpoints
+│   └── ...
+│
+├── demo/                   # Streamlit product demo
+├── evals/                  # Agent / Retrieval evaluation datasets
+├── tests/                  # Automated test suites
+├── docs/                   # Deployment and project documentation
+├── .github/workflows/      # GitHub Actions CI
+│
+├── Dockerfile.backend
+├── Dockerfile.demo
+├── docker-compose.yml
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Key Engineering Decisions
+
+### Why not let the LLM calculate match scores?
+
+LLM-generated scores are difficult to reproduce and test.
+
+InternScout therefore keeps:
+
+```text
+Match Score = Deterministic Application Logic
+```
+
+while the model focuses on orchestration and natural-language interaction.
+
+---
+
+### Why doesn't Retrieval replace Matching?
+
+Semantic similarity and candidate-job suitability are different problems.
+
+Retrieval answers:
+
+> “Which job descriptions are semantically relevant to this query?”
+
+Matching answers:
+
+> “Based on known candidate skills and structured job evidence, how well does this candidate match this job?”
+
+Keeping them separate improves:
+
+- explainability
+- testability
+- stability
+- architectural clarity
+
+---
+
+### Why abstract EmbeddingProvider and VectorStore?
+
+The retrieval domain should not depend directly on one embedding vendor or one vector database.
+
+Therefore the application depends on:
+
+```text
+EmbeddingProvider
+VectorStore
+```
+
+rather than concrete infrastructure.
+
+Current implementation uses an in-memory vector store, while the abstraction leaves room for replacing infrastructure without rewriting the retrieval domain.
+
+---
+
+### Why lazy build-then-swap?
+
+Embedding every job during application startup or ingestion would tightly couple retrieval availability to the core application path.
+
+The Runtime instead:
+
+```text
+mark_dirty()
+    ↓
+lazy rebuild
+    ↓
+build new retriever
+    ↓
+successful?
+    ↓
+swap
+```
+
+A failed refresh therefore does not automatically destroy the previously working retrieval state.
+
+---
+
+## Current Scope & Boundaries
+
+InternScout Agent `v1.1.0` intentionally remains a portfolio-scale AI application.
+
+Current boundaries:
+
+- SQLite is the only application database.
+- No database migration system.
+- `POST /api/crawl` currently triggers Mock ingestion only.
+- OPPO integration depends on observed recruitment-site interfaces and may require adapter changes if external schemas change.
+- Agent runs are request-scoped and do not provide persistent conversation memory.
+- Tool execution is sequential.
+- No Multi-Agent runtime.
+- No parallel Agent execution.
+- `InMemoryVectorStore` is process-local.
+- No persistent external vector database.
+- Retrieval indexing is lazy.
+- Retrieval remains optional when embedding configuration is unavailable.
+- Controlled Retrieval Evaluation is not a real embedding-quality benchmark.
+- Product Demo uses local / Mock job data by default.
+- No public production deployment.
+
+These boundaries are intentional for the current portfolio release and are not presented as production-scale capabilities.
+
+---
+
+## Release
+
+Latest portfolio release:
+
+### [`v1.1.0`](https://github.com/luyangzhan111/internscout-agent/releases/tag/v1.1.0)
+
+Release verification includes:
+
+```text
+Full regression             710 passed
+Agent evaluation              9 cases
+Direct retrieval              6 cases
+Agent retrieval integration   2 cases
+GitHub Actions CI             PASS
+Docker Compose validation     PASS
+```
+
+---
+
+## Project Status
+
+**InternScout Agent v1.1.0 is feature-complete for the current portfolio scope.**
+
+The current focus is maintaining a stable, reproducible release rather than continuously expanding feature scope.
