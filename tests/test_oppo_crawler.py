@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 
 from app.crawlers.base import BaseJobCrawler
@@ -82,6 +83,7 @@ class FakeOppoJobSourceClient:
         city_codes: Sequence[str] = (),
         job_types: Sequence[str] = (),
         share_id: str = "",
+        deadline: float | None = None,
     ) -> OppoPositionPage:
         """Record one discovery request and return its configured page."""
 
@@ -107,6 +109,8 @@ class FakeOppoJobSourceClient:
     def get_position_detail(
         self,
         position_id: str,
+        *,
+        deadline: float | None = None,
     ) -> OppoPositionDetail:
         """Record one detail request, raising configured failures."""
 
@@ -265,6 +269,8 @@ def test_oppo_detail_maps_exactly_to_job_create() -> None:
             ),
             skills=[],
             source="oppo",
+            source_job_id=detail.position_id,
+            status="active",
             source_url=(
                 "https://career.oppo.com/official/oppo/recruitment/post/"
                 "2061649545671430146?recruitType=OFFEN-RECRUITMENT"
@@ -331,3 +337,204 @@ def test_later_discovery_failure_stops_pagination_before_details() -> None:
         "search",
     ]
     assert [call[1]["page_num"] for call in source_client.calls] == [1, 2]
+
+
+def test_batch_preserves_successes_and_isolates_invalid_details() -> None:
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 3, "one", "two", "three")},
+        {
+            "one": position_detail("one"),
+            "two": ValueError("secret response body must never be exposed"),
+            "three": position_detail("three"),
+        },
+    )
+
+    batch = make_crawler(source, request_interval=0).fetch_batch()
+
+    assert [job.source_job_id for job in batch.jobs] == ["one", "three"]
+    assert all(job.status == "active" for job in batch.jobs)
+    assert batch.complete is False
+    assert len(batch.failures) == 1
+    assert batch.failures[0].item_id == "two"
+    assert "secret" not in batch.failures[0].message
+    assert source.calls[-1] == ("detail", "three")
+
+
+def test_batch_keeps_same_title_positions_with_distinct_source_ids() -> None:
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 2, "one", "two")},
+        {value: position_detail(value) for value in ("one", "two")},
+    )
+
+    batch = make_crawler(source, request_interval=0).fetch_batch()
+
+    assert batch.complete is True
+    assert batch.failures == []
+    assert len({job.title for job in batch.jobs}) == 1
+    assert [job.source_job_id for job in batch.jobs] == ["one", "two"]
+
+
+def test_batch_preserves_previous_page_when_later_discovery_fails() -> None:
+    source = FakeOppoJobSourceClient(
+        {
+            1: position_page(1, 3, 3, "one", page_size=1),
+            2: httpx.ConnectError("private connection details"),
+        },
+        {"one": position_detail("one")},
+    )
+
+    batch = make_crawler(source, page_size=1, request_interval=0).fetch_batch()
+
+    assert [job.source_job_id for job in batch.jobs] == ["one"]
+    assert batch.complete is False
+    assert batch.failures[0].item_id is None
+    assert "private" not in batch.failures[0].message
+    assert [call[0] for call in source.calls] == ["search", "detail", "search"]
+
+
+def test_batch_limits_attempts_even_when_details_fail() -> None:
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 3, "one", "two", "three")},
+        {"one": ValueError("invalid"), "two": position_detail("two")},
+    )
+
+    batch = make_crawler(source, max_jobs=2, request_interval=0).fetch_batch()
+
+    assert [job.source_job_id for job in batch.jobs] == ["two"]
+    assert batch.complete is False
+    assert len(batch.failures) == 1
+    assert "岗位数量上限" in batch.warnings[0]
+    assert ("detail", "three") not in source.calls
+
+
+def test_batch_job_limit_reports_two_successes_without_a_failed_job() -> None:
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 3, "one", "two", "three")},
+        {value: position_detail(value) for value in ("one", "two")},
+    )
+
+    batch = make_crawler(source, max_jobs=2, request_interval=0).fetch_batch()
+
+    assert [job.source_job_id for job in batch.jobs] == ["one", "two"]
+    assert batch.complete is False
+    assert batch.failures == []
+    assert len(batch.warnings) == 1
+    assert "岗位数量上限" in batch.warnings[0]
+
+
+@pytest.mark.parametrize("total", [2, 3])
+def test_batch_page_limit_is_always_reported_as_partial(total: int) -> None:
+    source = FakeOppoJobSourceClient(
+        {
+            1: position_page(1, total, total, "one", page_size=1),
+            2: position_page(2, total, total, "two", page_size=1),
+        },
+        {value: position_detail(value) for value in ("one", "two")},
+    )
+
+    batch = make_crawler(source, page_size=1, request_interval=0).fetch_batch()
+
+    assert len(batch.jobs) == 2
+    assert batch.complete is False
+    assert batch.failures == []
+    assert "分页上限" in batch.warnings[0]
+    assert len([call for call in source.calls if call[0] == "search"]) == 2
+
+
+def test_batch_deduplicates_position_ids_without_claiming_completeness() -> None:
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 3, "one", "one", "two")},
+        {value: position_detail(value) for value in ("one", "two")},
+    )
+
+    batch = make_crawler(source, request_interval=0).fetch_batch()
+
+    assert [job.source_job_id for job in batch.jobs] == ["one", "two"]
+    assert source.calls.count(("detail", "one")) == 1
+    assert batch.complete is False
+    assert any(failure.item_id == "one" for failure in batch.failures)
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        position_page(1, 1, 3, "one"),
+        position_page(1, 2, 1, "one"),
+        position_page(2, 1, 1, "one"),
+        position_page(1, 1, 1, "one", page_size=1),
+    ],
+)
+def test_batch_rejects_inconsistent_page_counts(page: OppoPositionPage) -> None:
+    source = FakeOppoJobSourceClient({1: page})
+
+    batch = make_crawler(source, request_interval=0).fetch_batch()
+
+    assert batch.complete is False
+    assert batch.jobs == []
+    assert len(source.calls) == 1
+
+
+def test_batch_detects_source_count_drift_between_pages() -> None:
+    source = FakeOppoJobSourceClient(
+        {
+            1: position_page(1, 2, 2, "one", page_size=1),
+            2: position_page(2, 3, 3, "two", page_size=1),
+        },
+        {"one": position_detail("one")},
+    )
+
+    batch = make_crawler(source, page_size=1, request_interval=0).fetch_batch()
+
+    assert batch.complete is False
+    assert len(batch.jobs) == 1
+    assert "发生变化" in batch.failures[-1].message
+
+
+def test_batch_deadline_preserves_success_without_starting_another_request() -> None:
+    now = [0.0]
+    sleeps: list[float] = []
+
+    def advance(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    source = FakeOppoJobSourceClient(
+        {1: position_page(1, 1, 2, "one", "two")},
+        {"one": position_detail("one")},
+    )
+    batch = make_crawler(
+        source,
+        request_interval=0.2,
+        time_budget_seconds=0.3,
+        clock=lambda: now[0],
+        sleep=advance,
+    ).fetch_batch()
+
+    assert batch.complete is False
+    assert [job.source_job_id for job in batch.jobs] == ["one"]
+    assert sleeps == [0.2]
+    assert source.calls[-1] == ("detail", "one")
+    assert batch.failures == []
+    assert "时间上限" in batch.warnings[0]
+
+
+def test_batch_does_not_hide_programming_errors() -> None:
+    source = FakeOppoJobSourceClient({1: RuntimeError("unexpected bug")})
+    with pytest.raises(RuntimeError, match="unexpected bug"):
+        make_crawler(source, request_interval=0).fetch_batch()
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"max_pages": 0}, {"max_pages": 11}, {"max_pages": True},
+        {"max_jobs": 0}, {"max_jobs": 101}, {"max_jobs": 1.5},
+        {"request_interval": -1}, {"request_interval": float("nan")},
+        {"time_budget_seconds": 0}, {"time_budget_seconds": float("inf")},
+    ],
+)
+def test_batch_policy_is_validated_before_any_request(policy: dict[str, Any]) -> None:
+    source = FakeOppoJobSourceClient({})
+    with pytest.raises(ValueError):
+        make_crawler(source, **policy)
+    assert source.calls == []

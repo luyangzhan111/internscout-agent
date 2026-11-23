@@ -14,6 +14,7 @@ from app.agent.orchestrator import AgentOrchestrator
 from app.agent.providers.deepseek_client import DeepSeekModelClient
 from app.database.job_query_adapter import RepositoryJobQueryAdapter
 from app.database.session import get_session
+from app.database.repository import get_dataset_revision
 from app.rag.embedding import OpenAICompatibleEmbeddingProvider
 from app.rag.retriever import JobKnowledgeRetriever
 from app.rag.runtime import RetrievalRuntime
@@ -113,20 +114,29 @@ def _collect_all_jobs(
 def _get_request_retriever(
     runtime: RetrievalRuntime | None,
     job_query: JobQueryPort,
+    dataset_revision: int | None = None,
 ) -> JobKnowledgeRetriever | None:
     """Return a ready retriever, rebuilding lazily when the index is stale."""
 
     if runtime is None:
         return None
 
-    if runtime.is_dirty or not runtime.is_ready:
+    version_changed = (
+        dataset_revision is not None
+        and runtime.indexed_revision != dataset_revision
+    )
+    if runtime.is_dirty or not runtime.is_ready or version_changed:
         try:
             runtime.rebuild(
-                _collect_all_jobs(job_query)
+                _collect_all_jobs(job_query),
+                dataset_revision=dataset_revision,
             )
         except Exception:
-            # Retrieval is optional.  A previous complete index remains a
-            # safe fallback; a first-build failure leaves retrieval disabled.
+            # A superseded snapshot may contain jobs now explicitly closed.
+            # Never reintroduce those jobs when a database-version rebuild
+            # fails. Same-version refreshes may still use the previous index.
+            if version_changed:
+                return None
             return runtime.current_retriever
 
     return runtime.current_retriever
@@ -154,6 +164,7 @@ def get_agent_orchestrator(
     job_retriever = _get_request_retriever(
         retrieval_runtime,
         job_query,
+        get_dataset_revision(session) if retrieval_runtime is not None else None,
     )
 
     return create_agent_orchestrator(

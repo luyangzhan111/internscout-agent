@@ -1,5 +1,7 @@
 """测试岗位唯一标识和去重功能。"""
 
+import pytest
+
 from app.schemas.job import JobCreate
 from app.services import (
     build_job_identity,
@@ -138,3 +140,50 @@ def test_city_names_ending_with_city_character_do_not_collide() -> None:
     result = deduplicate_jobs([first, second])
 
     assert result == [first, second]
+
+
+def test_source_ids_separate_same_name_jobs_and_survive_title_changes() -> None:
+    first = create_job(source=" OPPO ", source_job_id="A")
+    renamed = create_job(source="oppo", source_job_id="A", title="New title")
+    other_team = create_job(source="oppo", source_job_id="B")
+    other_case = create_job(source="oppo", source_job_id="a")
+    other_source = create_job(source="another", source_job_id="A")
+    assert build_job_identity(first) == build_job_identity(renamed)
+    assert len(deduplicate_jobs([first, renamed, other_team, other_case, other_source])) == 4
+
+
+def test_mock_legacy_tuple_cannot_collide_with_source_identity_namespace() -> None:
+    legacy = create_job(company="source_id", title="oppo", city="a")
+    real = create_job(source="oppo", source_job_id="a")
+    assert build_job_identity(legacy) != build_job_identity(real)
+
+
+def test_manual_ids_are_metadata_and_never_merge_different_source_sites() -> None:
+    first = create_job(source="manual", source_job_id="123", source_url="https://one.example/jobs/123")
+    other_site = create_job(source="manual", source_job_id="123", source_url="https://two.example/jobs/123")
+    without_id = create_job(source="manual", source_url=first.source_url)
+    assert build_job_identity(first) != build_job_identity(other_site)
+    assert build_job_identity(first) == build_job_identity(without_id)
+
+
+def test_real_sources_use_url_identity_without_cross_source_merging() -> None:
+    first = create_job(source="manual", source_url="HTTPS://Example.COM:443/jobs/A?q=1#top")
+    same = create_job(source="manual", source_url="https://example.com/jobs/A?q=1#top")
+    other_path = create_job(source="manual", source_url="https://example.com/jobs/a?q=1")
+    other_query = create_job(source="manual", source_url="https://example.com/jobs/A?q=2")
+    other_source = create_job(source="oppo", source_url=first.source_url)
+    assert build_job_identity(first) == build_job_identity(same)
+    assert len(deduplicate_jobs([first, same, other_path, other_query, other_source])) == 4
+
+
+def test_manual_hash_routes_identify_distinct_jobs() -> None:
+    first = create_job(source="manual", source_job_id="11", source_url="https://careers.company.test/#/jobs/11")
+    other = create_job(source="manual", source_job_id="22", source_url="https://careers.company.test/#/jobs/22")
+    assert build_job_identity(first) != build_job_identity(other)
+    assert deduplicate_jobs([first, other, first]) == [first, other]
+
+
+@pytest.mark.parametrize("url", ["not-a-url", "file:///jobs/1", "https://user:secret@example.com/1"])
+def test_real_source_without_id_requires_http_identity(url: str) -> None:
+    with pytest.raises(ValueError):
+        build_job_identity(create_job(source="manual", source_url=url))

@@ -43,3 +43,19 @@ jobs:
 
       - name: Build Docker images
         run: docker compose build
+
+      - name: Start the local workbench without provider keys
+        run: docker compose up --detach --no-build --wait --wait-timeout 90
+
+      - name: Check the backend and Streamlit
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:8000/api/health
+          curl --fail --silent --show-error --retry 10 --retry-connrefused http://127.0.0.1:8501/_stcore/health
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the local workbench
+        if: always()
+        run: docker compose down --volumes

@@ -94,6 +94,7 @@ def test_repository_job_query_adapter_forwards_search_and_converts_jobs(
         "skill": "python",
         "page": 2,
         "page_size": 5,
+        "include_closed": False,
     }
 
     assert total == 1

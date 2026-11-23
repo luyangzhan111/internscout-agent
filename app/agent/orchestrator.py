@@ -37,6 +37,8 @@ class AgentOrchestrator:
     def run(
         self,
         user_message: str,
+        *,
+        initial_tool_executions: list[ToolExecution] | None = None,
     ) -> AgentResult:
         """Execute one bounded, stateless agent run."""
 
@@ -45,7 +47,12 @@ class AgentOrchestrator:
         )
 
         state = AgentState(
-            user_message=normalized_message
+            user_message=normalized_message,
+            # Trusted, server-created observations belong to this run only.
+            tool_executions=[
+                execution.model_copy(deep=True)
+                for execution in (initial_tool_executions or [])
+            ],
         )
 
         while True:

@@ -1,9 +1,10 @@
 """HTTP boundary for OPPO recruitment website position data."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 import math
+import time
 from typing import Any
 
 import httpx
@@ -17,9 +18,13 @@ DETAIL_URL = (
     "https://career.oppo.com/ats-candidate-api/open-api/position/"
     "queryPosition"
 )
-DEFAULT_TIMEOUT_SECONDS = 10.0
+DEFAULT_TIMEOUT_SECONDS = 5.0
 
 _MISSING = object()
+
+
+class SourceDeadlineExceeded(TimeoutError):
+    """The refresh deadline was reached before another source operation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +69,10 @@ class OppoJobSourceClient:
         http_client: httpx.Client,
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        max_attempts: int = 2,
+        retry_interval: float = 0.2,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         """Store a caller-owned synchronous HTTP client and timeout policy."""
 
@@ -75,8 +84,22 @@ class OppoJobSourceClient:
         ):
             raise ValueError("timeout must be a positive finite number")
 
+        if type(max_attempts) is not int or not 1 <= max_attempts <= 2:
+            raise ValueError("max_attempts must be 1 or 2")
+        if (
+            isinstance(retry_interval, bool)
+            or not isinstance(retry_interval, (int, float))
+            or not math.isfinite(retry_interval)
+            or retry_interval < 0
+        ):
+            raise ValueError("retry_interval must be a non-negative finite number")
+
         self._http_client = http_client
         self._timeout = float(timeout)
+        self._max_attempts = max_attempts
+        self._retry_interval = float(retry_interval)
+        self._clock = clock
+        self._sleep = sleep
 
     def search_positions(
         self,
@@ -88,13 +111,15 @@ class OppoJobSourceClient:
         city_codes: Sequence[str] = (),
         job_types: Sequence[str] = (),
         share_id: str = "",
+        deadline: float | None = None,
     ) -> OppoPositionPage:
         """Request and return exactly one validated discovery page."""
 
         self._validate_positive_request_integer(page_num, "page_num")
         self._validate_positive_request_integer(page_size, "page_size")
 
-        response = self._http_client.post(
+        response = self._request(
+            "POST",
             self.DISCOVERY_URL,
             json={
                 "pageNum": page_num,
@@ -105,7 +130,7 @@ class OppoJobSourceClient:
                 "recruitTypeList": list(recruit_types),
                 "shareId": share_id,
             },
-            timeout=self._timeout,
+            deadline=deadline,
         )
         data = self._decode_data(response, operation="discovery")
 
@@ -196,6 +221,8 @@ class OppoJobSourceClient:
     def get_position_detail(
         self,
         position_id: str,
+        *,
+        deadline: float | None = None,
     ) -> OppoPositionDetail:
         """Request and return one validated position detail."""
 
@@ -204,10 +231,11 @@ class OppoJobSourceClient:
             "requested position_id",
             operation="detail",
         )
-        response = self._http_client.get(
+        response = self._request(
+            "GET",
             self.DETAIL_URL,
             params={"positionId": requested_position_id},
-            timeout=self._timeout,
+            deadline=deadline,
         )
         data = self._decode_data(response, operation="detail")
 
@@ -258,6 +286,54 @@ class OppoJobSourceClient:
                 operation="detail",
             ),
         )
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        deadline: float | None = None,
+        **kwargs: Any,
+    ) -> httpx.Response:
+        """Retry only transient reads, with at most two transport attempts.
+
+        The discovery POST is a read-only search. JSON/schema errors are
+        decoded outside this retry loop and therefore are never retried.
+        """
+
+        for attempt in range(self._max_attempts):
+            if attempt and self._retry_interval:
+                self._remaining_timeout(deadline, required=self._retry_interval)
+                self._sleep(self._retry_interval)
+            timeout = self._remaining_timeout(deadline)
+            try:
+                response = self._http_client.request(
+                    method, url, timeout=timeout, **kwargs
+                )
+                self._remaining_timeout(deadline)
+                response.raise_for_status()
+            except httpx.TransportError:
+                if attempt + 1 == self._max_attempts:
+                    raise
+            except httpx.HTTPStatusError as exc:
+                retryable = exc.response.status_code == 429 or (
+                    500 <= exc.response.status_code <= 599
+                )
+                if not retryable or attempt + 1 == self._max_attempts:
+                    raise
+            else:
+                return response
+        raise AssertionError("A source attempt must return or raise")
+
+    def _remaining_timeout(
+        self, deadline: float | None, *, required: float = 0.0
+    ) -> float:
+        if deadline is None:
+            return self._timeout
+        remaining = deadline - self._clock()
+        if remaining <= required:
+            raise SourceDeadlineExceeded("Source refresh deadline exceeded")
+        return min(self._timeout, remaining)
 
     @staticmethod
     def _decode_data(

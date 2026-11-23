@@ -3,6 +3,8 @@
 .env
 .env.*
 databases/
+data/
+tmp/
 tests/
 docs/
 __pycache__/
@@ -11,6 +13,8 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+*.pre-lifecycle-*.bak
+*.pre-stage19-*.bak
 .coverage
 htmlcov/
 .vscode/

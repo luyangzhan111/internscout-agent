@@ -80,6 +80,11 @@ class JobModel(Base):
         nullable=False,
     )
 
+    source_job_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="unknown", server_default="unknown"
+    )
+
     published_at: Mapped[date | None] = mapped_column(
         Date,
         nullable=True,
@@ -90,6 +95,10 @@ class JobModel(Base):
         nullable=False,
         server_default=func.current_timestamp(),
     )
+    # UTC timestamps. Observation/check means ingestion, not manual verification.
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
         """返回便于调试的岗位描述。"""
@@ -102,3 +111,12 @@ class JobModel(Base):
             f"city={self.city!r}"
             ")"
         )
+
+
+class DatasetStateModel(Base):
+    """Single-row version shared by writers and process-local search indexes."""
+
+    __tablename__ = "dataset_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

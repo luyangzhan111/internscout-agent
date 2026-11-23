@@ -27,15 +27,17 @@ For Docker Compose execution:
 
 The Docker path does not require the maintainer’s virtual environment or manually installed Python packages.
 
-## 3. Environment configuration
+## 3. Optional provider configuration
 
-Copy the safe template and edit the resulting `.env` file for Compose:
+The job library, manual JD import, eligibility checks and rule recommendations start with no `.env` file or API keys. To configure an optional provider for Compose, copy the template and edit the settings you need:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
 Required Backend variables for Agent queries:
+
+These variables are required by the legacy `/api/agent/query` free-form path and optional for AI explanations in `/api/agent/recommend`. The current “Agent 推荐” page can return skill/eligibility rule cards with no model configured; see [recommendation usage](agent-recommendations.md).
 
 ```text
 DEEPSEEK_API_KEY=your-real-key
@@ -76,27 +78,23 @@ Direct Python processes read environment variables but do not automatically load
 
 ## 4. Local Python development
 
-Create the environment and install dependencies:
+From the repository root on Windows, check that `python --version` reports Python 3.12, create the environment, install dependencies and start the Backend:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1
 ```
 
-For a local Agent query, inject the provider variables into the current process environment. Then start the Backend:
+In a second PowerShell terminal at the same repository root, start the Demo:
 
 ```powershell
-python -m uvicorn app.main:app --reload
+.\.venv\Scripts\python.exe -m streamlit run demo/app.py --server.address=127.0.0.1
 ```
 
-In a second terminal, start the Demo:
+On macOS or Linux, use `python3.12 -m venv .venv` and run the same modules with `.venv/bin/python`.
 
-```powershell
-streamlit run demo/app.py
-```
-
-The local Demo calls `http://127.0.0.1:8000` by default. This mode runs the two processes separately and uses the local SQLite default unless `INTERNSCOUT_DATABASE_URL` is overridden. Retrieval is optional; set the two required embedding variables to enable it.
+The local Demo calls `http://127.0.0.1:8000` by default. The Backend uses the local SQLite default unless `INTERNSCOUT_DATABASE_URL` is set. For free-form Agent queries or AI explanations, set the provider variables in the Backend terminal before starting it.
 
 ## 5. Docker Compose startup
 
@@ -113,6 +111,7 @@ Compose starts two services:
 - `demo`: Streamlit on container port `8501`
 
 The Demo uses Docker service discovery and calls `http://backend:8000` inside the Compose network. It does not receive DeepSeek or embedding provider secrets.
+The host ports are published on `127.0.0.1` for local use.
 
 ## 6. Service URLs
 
@@ -135,9 +134,13 @@ In Compose:
 - Container directory: `/data`
 - Named volume: `backend_data`
 
-This creates the database schema on first startup, but it does not automatically insert job rows. The project does not currently use Alembic or another database migration system.
+This creates the database schema on first startup, but it does not automatically insert job rows. Stage 14 adds a transactional SQLite lifecycle upgrade: existing databases are backed up beside the original file before upgrading, and existing row IDs and creation dates are preserved. Repeated startup does not repeat the migration. There is no general Alembic migration framework.
 
-## 8. Loading Mock data
+## 8. Loading real or Mock data
+
+A fresh **岗位库** offers **导入真实岗位** and **加载演示岗位**. The first opens the manual form. Save the job with its source link, choose **投递条件**, and expand **查看五项判断与原文依据** after assessing it. The source button opens the original link in the browser. The second option loads marked local fixtures. See [job import instructions](job-imports.md) for update identity, statuses, limits and backup recovery.
+
+The new API routes are `POST /api/imports/manual`, `POST /api/imports/oppo`, `GET /api/imports`, and `GET /api/imports/{run_id}`. Source refresh is manual and bounded, not a scheduled live feed. A missing job is not automatically closed. Historical import summaries persist in the same SQLite volume.
 
 After the Backend is healthy, load the local sample jobs through the existing Mock-only endpoint:
 
@@ -149,13 +152,13 @@ This populates local SQLite data from `MockJobCrawler`. It does not fetch live r
 
 ## 9. Provider configuration and retrieval lifecycle
 
-`DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` are Backend configuration. They are required when using `POST /api/agent/query` or the Streamlit Agent Demo.
+`DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` are Backend configuration. They are required when using `POST /api/agent/query` or requesting AI-generated explanations on **Agent 推荐**. The page starts with **AI 补充说明** unchecked.
 
 `INTERNSCOUT_EMBEDDING_API_KEY` and `INTERNSCOUT_EMBEDDING_BASE_URL` are also Backend-only configuration. They are required to enable semantic retrieval. The model and dimensions variables are optional and default to `text-embedding-v4` and `1024`.
 
 If either required embedding variable is missing or invalid, the Backend still starts and exposes health/data endpoints. Retrieval is disabled and the Agent falls back to `search_jobs`, `get_job_detail`, and `match_jobs`. Embedding configuration is not required for FastAPI startup.
 
-FastAPI constructs an optional `RetrievalRuntime` at startup without embedding all jobs. On an Agent request, a dirty or unready runtime collects the current database snapshot and rebuilds lazily. Successful `/api/crawl` ingestion only calls `mark_dirty()`; it does not perform embedding during crawl. A successful rebuild swaps in the new retriever. A failed refresh keeps the old retriever and leaves the runtime dirty; a failed initial rebuild leaves retrieval unavailable for that request.
+FastAPI constructs an optional `RetrievalRuntime` at startup without embedding all jobs. On an Agent request, a dirty, unready or out-of-date runtime collects the current database snapshot and rebuilds lazily. Successful `/api/crawl` ingestion only calls `mark_dirty()`; it does not perform embedding during crawl. All upserts maintain a database revision so other processes can detect changes. A successful rebuild swaps in the new retriever. A same-version refresh failure may retain the old retriever; after the database version changes, a failed rebuild disables semantic retrieval for that request, so closed jobs cannot return through a stale index. A failed initial rebuild also leaves retrieval unavailable for that request.
 
 Retrieval is exposed through the Agent tool `retrieve_job_knowledge`; the Streamlit Demo has no separate retrieval UI.
 
@@ -188,7 +191,7 @@ GitHub Actions runs on pushes and pull requests targeting `main`.
 The workflow contains:
 
 1. A Python 3.12 job that installs `requirements.txt` and runs `python -m pytest -q`.
-2. A Docker validation job that runs `docker compose config --quiet` and `docker compose build`.
+2. A Docker validation job that checks the Compose configuration, builds the images, and starts both services to check their health endpoints.
 
 The workflow validates the test suite, Compose syntax, and image build definitions. It does not run a public deployment, require production infrastructure, or perform a live DeepSeek request.
 
@@ -218,7 +221,7 @@ docker compose up --build
 
 ### No jobs appear in the Demo
 
-A fresh SQLite volume has tables but no jobs. Call `POST /api/crawl` and retry the Demo request.
+A fresh SQLite volume has tables but no jobs. On **岗位库**, choose **导入真实岗位** to paste a JD or **加载演示岗位** to try the bundled fixtures. To include fixtures in **Agent 推荐**, enable **包含演示数据（仅用于体验）**.
 
 ### Docker build cannot connect to the engine
 
@@ -226,9 +229,9 @@ Confirm that Docker Engine or Docker Desktop is running. A local engine availabi
 
 ## 13. Known limitations
 
-- SQLite is the only supported database and has no migration system.
+- SQLite is the only supported database; a backed-up lifecycle upgrade exists, but there is no general migration framework.
 - `/api/crawl` remains MockJobCrawler-specific.
-- The default Demo data is local SQLite/Mock data, not real-time recruitment data.
+- The library can contain manually imported, manually refreshed OPPO, or Mock data. Only Mock records are fixtures; no background refresh or automatic expiry detection is implemented.
 - Agent runs are request-scoped and do not preserve cross-request conversation state.
 - Tool calling remains sequential.
 - `InMemoryVectorStore` is a process-local index and is not a persistent external vector database.

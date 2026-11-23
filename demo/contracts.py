@@ -13,6 +13,8 @@ class DemoJob(BaseModel):
     city: str = Field(min_length=1)
     salary: str | None = None
     source_url: str | None = None
+    source: str | None = None
+    status: str = "unknown"
 
 
 class DemoRecommendation(BaseModel):

@@ -220,3 +220,28 @@ def test_extraction_is_repeatable_and_uses_textual_order() -> None:
         "RAG",
         "FastAPI",
     ]
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "能熟练使用pytorch、opencv等深度学习框架与工具",
+        "熟悉PYTORCH和oPeNcV，参与视觉算法开发。",
+        "使用PyTorch训练，使用OpenCV处理图片。",
+    ],
+)
+def test_cv_frameworks_normalize_case_and_match_chinese_boundaries(description: str) -> None:
+    assert extract_skills(description=description) == ["PyTorch", "OpenCV"]
+
+
+def test_cv_frameworks_deduplicate_across_structured_title_and_description() -> None:
+    assert extract_skills(
+        skills=[" opencv ", "PyToRcH", "OPENCV", "pytorch"],
+        title="PyTorch视觉算法实习生",
+        description="能熟练使用pytorch、opencv等深度学习框架与工具",
+    ) == ["OpenCV", "PyTorch"]
+
+
+@pytest.mark.parametrize("text", ["pytorch_lightning", "opencv2", "my_pytorch", "OpenCV2", "PYTORCH_LIGHTNING"])
+def test_cv_framework_names_inside_ascii_identifiers_are_not_evidence(text: str) -> None:
+    assert extract_skills(title=text, description=text) == []

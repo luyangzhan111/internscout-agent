@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from demo.contracts import DemoAgentResponse, DemoRecommendation
+from demo.data_client import safe_http_url
 
 
 _REASON_LABELS = {
@@ -26,6 +27,8 @@ class RecommendationView:
     missing_skills: str
     reason: str
     source_url: str | None
+    source: str | None
+    status: str
 
 
 def build_recommendation_views(
@@ -63,7 +66,9 @@ def _build_recommendation_view(
             recommendation.reason,
             recommendation.reason,
         ),
-        source_url=job.source_url,
+        source_url=safe_http_url(job.source_url),
+        source=job.source,
+        status=job.status,
     )
 
 
