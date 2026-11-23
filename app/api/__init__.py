@@ -5,6 +5,9 @@ from app.api.routes import (
     crawl_router,
     health_router,
     jobs_router,
+    imports_router,
+    eligibility_router,
+    recommendations_router,
 )
 
 __all__ = [
@@ -12,4 +15,7 @@ __all__ = [
     "crawl_router",
     "health_router",
     "jobs_router",
+    "imports_router",
+    "eligibility_router",
+    "recommendations_router",
 ]

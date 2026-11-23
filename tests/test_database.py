@@ -36,6 +36,11 @@ def test_job_table_contains_expected_columns() -> None:
         "source_url",
         "published_at",
         "created_at",
+        "source_job_id",
+        "status",
+        "updated_at",
+        "last_seen_at",
+        "last_checked_at",
     }
 
 

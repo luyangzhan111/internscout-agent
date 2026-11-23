@@ -16,8 +16,11 @@ class RepositoryJobQueryAdapter(JobQueryPort):
     def __init__(
         self,
         session: Session,
+        *,
+        include_closed: bool = False,
     ) -> None:
         self._session = session
+        self._include_closed = include_closed
 
     def search_jobs(
         self,
@@ -35,6 +38,7 @@ class RepositoryJobQueryAdapter(JobQueryPort):
             skill=skill,
             page=page,
             page_size=page_size,
+            include_closed=self._include_closed,
         )
 
         jobs = [

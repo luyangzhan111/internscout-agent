@@ -63,3 +63,16 @@ def test_job_model_rejects_blank_title() -> None:
 
     with pytest.raises(ValidationError):
         create_valid_job(title="   ")
+
+
+def test_source_names_normalize_but_ids_preserve_case() -> None:
+    job = create_valid_job(source=" OPPO ", source_job_id=" AbC42 ")
+    assert job.source == "oppo"
+    assert job.source_job_id == "AbC42"
+    assert job.status == "unknown"
+
+
+@pytest.mark.parametrize("updates", [{"source_job_id": " "}, {"status": "expired"}])
+def test_lifecycle_schema_rejects_invalid_values(updates: dict) -> None:
+    with pytest.raises(ValidationError):
+        create_valid_job(**updates)

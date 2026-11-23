@@ -10,17 +10,84 @@
 
 **Current portfolio release: `v1.1.0`**
 
+当前工作区包含 Stage 24 本地试用候选。上手流程无需 DeepSeek 或 embedding 密钥。[候选范围与验收](docs/tasks/stage-24-local-pilot.md)
+
+## Quick Start
+
+在仓库根目录运行 Docker Compose：
+
+```bash
+docker compose up --build
+```
+
+准备好后打开 <http://127.0.0.1:8501>。首次启动使用空的岗位库，有两种体验方式。
+
+1. **核对真实 JD**。选择 **导入真实岗位**，填写岗位名称、公司、城市和官网来源链接，粘贴职责与要求后保存。到 **投递条件** 填写你已确定的条件并点击判断，展开 **查看五项判断与原文依据**，可用 **前往岗位来源核对** 打开原链接。
+2. **先试演示岗位**。选择 **加载演示岗位**，体验岗位浏览和投递条件判断。也可以到 **Agent 推荐**，填写 `Python`，勾选 **包含演示数据（仅用于体验）**，然后点击 **获取推荐**。演示数据有独立标记。
+
+如果使用本机 Python，在 PowerShell 中用 `python --version` 确认版本为 3.12 后，创建环境、安装依赖并启动后端：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1
+```
+
+另开一个终端，在同一仓库根目录启动界面：
+
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run demo/app.py --server.address=127.0.0.1
+```
+
+更多启动方式、可选模型和排查步骤见[本地部署说明](docs/deployment.md)。
+
+## Stage 14–23
+
+**当前工作区新增 Stage 14：真实岗位导入与更新（尚未发布）。**
+启动后选择“岗位库”或“导入与更新”，可无需模型浏览岗位、粘贴真实 JD、限量刷新 OPPO、更新已有岗位并查看运行记录。
+旧 SQLite 首次升级会先备份，保留岗位编号与数据。[使用说明](docs/job-imports.md) · [开发任务与验收](docs/tasks/stage-14-real-job-ingestion.md)
+
+**Stage 15：投递条件判断（当前工作区，尚未发布）。**
+选择“投递条件”，填写毕业届次、学历、经验、意向城市及实习时长，查看“符合／不符合／待确认”和对应原文。无需模型，候选信息不入库；判断与原有技能分数独立。[使用说明](docs/application-eligibility.md) · [开发任务与验收](docs/tasks/stage-15-application-eligibility.md)
+
+**Stage 16：Agent 推荐接入投递条件（当前工作区，尚未发布）。**
+“Agent 推荐”同时展示技能匹配、五项条件和原文依据；符合优先，待确认保留，不符合与关闭单列。模型只补充说明，未配置模型时仍可使用规则推荐。[使用说明](docs/agent-recommendations.md) · [开发任务与验收](docs/tasks/stage-16-agent-eligibility-recommendations.md)
+
+**Stage 17：可信推荐基础版（当前工作区，尚未发布）。**
+推荐默认隔离样例及示例链接，跨来源重复岗位只占一个位置并保留来源信息；待确认说明原因分类与下一步建议；技能卡片同时展示匹配项数与已识别项数。[开发任务与验收](docs/tasks/stage-17-trustworthy-recommendations.md)
+
+**Stage 18：目标方向与核心技能推荐（当前工作区，尚未发布）。**
+可选择目标岗位方向，明确无关岗位单列；按原文区分核心／加分／未分类技能。同资格组按方向、核心技能和加分技能排序，继续保留总技能覆盖率与原文依据。[开发任务与验收](docs/tasks/stage-18-recommendation-quality.md)
+
+**Stage 19：真实岗位与推荐质量对照（当前工作区，尚未发布）。**
+收集五家公司的 30 条官网岗位快照，覆盖 AI 应用、后端、计算机视觉及相邻负例；使用六组合成条件与原文标注，在同一冻结岗位池比较简单技能匹配和当前推荐。评测离线、无需模型，报告前五名相关性、错误推荐、值得核对岗位漏筛与三态一致性；标签为 AI 辅助、项目内复核，尚未经过独立真人验证。[对照结果](docs/evaluations/stage19-analysis.md) · [使用与复跑](docs/recommendation-evaluation.md) · [开发任务与验收](docs/tasks/stage-19-real-data-evaluation.md)
+
+**Stage20：学历/在读与复合方向修复（当前工作区，尚未发布）。**
+保留旧数据与旧实现做回归，新增24条官网岗位、8组合成条件、192对盲标，用隔离进程比较技能基线、修复前后规则。新集学历/状态阻断召回21/30→30/30，前五相关25/40→27/40；相关漏筛却从2/49增至5/49，明确保留方向判断副作用，未用新结果调规则。[结果与限制](docs/evaluations/stage20-analysis.md) · [任务与验收](docs/tasks/stage-20-eligibility-compound-directions.md)
+
+**Stage21：方向证据与待确认（当前工作区，尚未发布）。**
+逐目标显示匹配依据、明确无关和证据不足；识别出AI职责不再自动排除计算机视觉，待确认继续保留。原54岗转为两批开发回归，另收26条官网岗位、10组条件、260对独立盲标。保留召回收益与待确认噪声的代价，资格、技能分类及排序公式保持。[任务与验收](docs/tasks/stage-21-direction-evidence.md) · [本轮结果及限制](docs/evaluations/stage21-analysis.md)
+
+**Stage22：学历范围与待确认排序（当前工作区，尚未发布）。**
+修复研究生/博士生等并列表达，先保存仅学历版本，再按可核对的目标线索排序待确认候选。原80岗作为回归，另收28岗/15公司/280组盲标作四组留出对照：新集前五相关29/50→33/50、明确错误20/50→15/50，有用漏筛4/47→2/47。候选保留集合与技能基线保持，仍有学历分支和城市误判，来源集中、尚无真人验证。[任务与验收](docs/tasks/stage-22-degree-uncertain-ranking.md) · [结果与限制](docs/evaluations/stage22-analysis.md)
+
+**Stage23：复杂学历分支与混合工作地点（当前工作区，尚未发布）。**
+区分共同招募学历和分支能力说明，明确学生身份仍核对；混合办公的异地权限不明时保留待确认，明确到岗、远程否定和地域限制仍严格。原108岗/912对标签保留回归，另补33条官网岗位、16主体、330对盲标并全量交叉复核；四组离线比较分开解释学历和地点变化，方向/技能/排序公式保持。[任务与验收](docs/tasks/stage-23-education-work-location.md) · [结果与限制](docs/evaluations/stage23-analysis.md)
+
 ## Product Preview
+
+当前工作区 Demo 已统一为浅色求职工作台：四个功能页共用导航、卡片与状态标签，支持窄屏单列布局、页面淡入和轻量悬停反馈，并响应系统“减少动态效果”设置。
+以下为当前工作区界面；岗位状态来自导入快照，投递前仍需核对来源。
 
 <p align="center">
   <img
-    src="docs/assets/internscout-demo.png"
+    src="docs/assets/internscout-workbench.jpg"
     alt="InternScout Agent Streamlit product demo"
     width="900"
   />
 </p>
 
-The demo shows the end-to-end flow from candidate input to Agent explanation and deterministic job recommendations.
+The demo connects job browsing, import and updates, application eligibility, and explainable recommendations in one workspace.
 
 InternScout Agent 是一个面向招聘岗位发现与候选人匹配场景构建的 AI Agent 应用。
 
@@ -308,7 +375,7 @@ mark_dirty()
 刷新采用 **build-then-swap**：
 
 - 新索引成功构建后才替换当前 retriever；
-- refresh 失败时保留旧 retriever；
+- 同数据版本的 refresh 失败时保留旧 retriever；数据库版本已变化时暂时停用旧语义索引，避免返回已关闭岗位；
 - 初始构建失败时，Agent 仍可继续使用默认三个非 Retrieval Tools。
 
 这样可以将核心 Agent 能力与可选 Semantic Retrieval 能力解耦。
@@ -445,7 +512,7 @@ Demo 支持用户输入：
 
 Demo 不直接访问数据库、Matching Service 或 Agent Runtime，而始终通过 FastAPI 与后端交互。
 
-当前 Product Demo 使用本地 SQLite / MockJobCrawler 数据，不代表实时招聘网站内容。
+当前岗位库使用本地 SQLite，可包含手动导入、手动刷新 OPPO 或 Mock 数据。Mock 明确标注为样例；系统没有后台自动刷新，岗位状态以原站为准。
 
 项目目前提供本地运行与 Docker Compose 部署方式，**没有 public production deployment**。
 
@@ -595,107 +662,16 @@ Blocking CI 保持：
 | `POST` | `/api/crawl` | Run local MockJobCrawler ingestion |
 | `GET` | `/api/jobs` | Filter and paginate jobs |
 | `GET` | `/api/jobs/{job_id}` | Get job detail |
+| `POST` | `/api/imports/manual` | Import a pasted JD and its source link |
+| `POST` | `/api/eligibility/evaluate` | Check application criteria and return the source evidence |
+| `POST` | `/api/agent/recommend` | Rank jobs with rule-based evidence and optional AI explanations |
 | `POST` | `/api/agent/query` | Execute one Agent run |
 
 Semantic Job Knowledge Retrieval 当前作为 Agent Tool 提供，没有额外暴露独立 Retrieval HTTP endpoint。
 
 `POST /api/crawl` 当前只执行 Mock 数据采集。
 
-OPPO real-source ingestion 通过独立 source adapter / composition 使用，目前没有暴露公共 HTTP trigger。
-
----
-
-## Quick Start
-
-### Option 1 — Docker Compose
-
-Clone repository:
-
-```bash
-git clone https://github.com/luyangzhan111/internscout-agent.git
-cd internscout-agent
-```
-
-创建环境变量文件：
-
-```powershell
-Copy-Item .env.example .env
-```
-
-根据需要填写 DeepSeek / Embedding 配置。
-
-校验 Docker Compose：
-
-```bash
-docker compose config --quiet
-```
-
-启动：
-
-```bash
-docker compose up --build
-```
-
-启动后初始化本地 Demo 数据：
-
-```powershell
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
-```
-
-访问：
-
-```text
-FastAPI Backend
-http://127.0.0.1:8000
-
-Streamlit Demo
-http://127.0.0.1:8501
-```
-
-完整部署说明：
-
-[`docs/deployment.md`](docs/deployment.md)
-
----
-
-### Option 2 — Local Python
-
-创建虚拟环境：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-在启动 Agent Backend 前，将 DeepSeek 配置注入当前 PowerShell 进程：
-```powershell
-$env:DEEPSEEK_API_KEY="your-deepseek-api-key"
-$env:DEEPSEEK_MODEL="your-deepseek-model"
-```
-
-安装依赖：
-
-```powershell
-python -m pip install -r requirements.txt
-```
-
-启动 FastAPI：
-
-```powershell
-python -m uvicorn app.main:app --reload
-```
-
-初始化本地岗位数据：
-
-```powershell
-Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/crawl
-```
-
-启动 Streamlit：
-
-```powershell
-$env:PYTHONPATH = (Get-Location).Path
-python -m streamlit run demo/app.py
-```
+OPPO real-source ingestion 可通过 `POST /api/imports/oppo` 限量手动触发；手动 JD 导入使用 `POST /api/imports/manual`，历史记录使用 `GET /api/imports`。这几个入口无需模型配置。
 
 ---
 
@@ -852,7 +828,7 @@ InternScout Agent `v1.1.0` intentionally remains a portfolio-scale AI applicatio
 Current boundaries:
 
 - SQLite is the only application database.
-- No database migration system.
+- A backed-up, transactional SQLite lifecycle migration is included; there is no general migration framework.
 - `POST /api/crawl` currently triggers Mock ingestion only.
 - OPPO integration depends on observed recruitment-site interfaces and may require adapter changes if external schemas change.
 - Agent runs are request-scoped and do not provide persistent conversation memory.
@@ -864,7 +840,7 @@ Current boundaries:
 - Retrieval indexing is lazy.
 - Retrieval remains optional when embedding configuration is unavailable.
 - Controlled Retrieval Evaluation is not a real embedding-quality benchmark.
-- Product Demo uses local / Mock job data by default.
+- Job library supports manual imports and bounded OPPO refreshes; Mock records remain clearly labelled fixtures.
 - No public production deployment.
 
 These boundaries are intentional for the current portfolio release and are not presented as production-scale capabilities.
@@ -892,6 +868,4 @@ Docker Compose validation     PASS
 
 ## Project Status
 
-**InternScout Agent v1.1.0 is feature-complete for the current portfolio scope.**
-
-The current focus is maintaining a stable, reproducible release rather than continuously expanding feature scope.
+GitHub 上当前发布版本为 `v1.1.0`。Stage 14–24 当前处于本地候选范围，试用进度见 [Stage 24](docs/tasks/stage-24-local-pilot.md)。

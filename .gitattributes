@@ -11,3 +11,34 @@
 *.yaml text eol=lf
 
 requirements.txt text eol=lf
+
+# Captured records and frozen manifests keep their exact archived bytes.
+data/real_jobs/stage19/** -text -eol
+evals/cases/recommendation_quality/** -text -eol
+data/real_jobs/stage20/** -text -eol
+evals/cases/recommendation_quality_stage20/** -text -eol
+evals/cases/recommendation_quality_stage20_regression/** -text -eol
+evals/baselines/stage19/** -text -eol
+evals/baselines/stage20/** -text -eol
+data/real_jobs/stage21/** -text -eol
+evals/cases/recommendation_quality_stage21/** -text -eol
+evals/cases/recommendation_quality_stage21_holdout26/** -text -eol
+evals/cases/recommendation_quality_stage21_regression19/** -text -eol
+evals/cases/recommendation_quality_stage21_regression20/** -text -eol
+evals/baselines/stage21/** -text -eol
+evals/baselines/stage22_degree_only/** -text -eol
+data/real_jobs/stage22/** -text -eol
+evals/cases/recommendation_quality_stage22/** -text -eol
+evals/cases/recommendation_quality_stage22_regression19/** -text -eol
+evals/cases/recommendation_quality_stage22_regression20/** -text -eol
+evals/cases/recommendation_quality_stage22_regression21/** -text -eol
+evals/baselines/stage22/** -text -eol
+evals/baselines/stage23_degree_only/** -text -eol
+evals/baselines/stage23_degree_only_initial/** -text -eol
+evals/baselines/stage23_degree_only_verb_draft/** -text -eol
+data/real_jobs/stage23/** -text -eol
+evals/cases/recommendation_quality_stage23/** -text -eol
+evals/cases/recommendation_quality_stage23_regression19/** -text -eol
+evals/cases/recommendation_quality_stage23_regression20/** -text -eol
+evals/cases/recommendation_quality_stage23_regression21/** -text -eol
+evals/cases/recommendation_quality_stage23_regression22/** -text -eol

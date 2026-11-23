@@ -17,6 +17,13 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+*.pre-lifecycle-*.bak
+*.pre-stage19-*.bak
+
+# Local job snapshots, derived research corpora, and scratch outputs
+/data/real_jobs/
+/evals/cases/recommendation_quality*/
+/tmp/
 
 # 编辑器配置
 .vscode/

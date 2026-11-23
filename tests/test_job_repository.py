@@ -164,7 +164,7 @@ def test_save_job_returns_existing_duplicate(
     assert first_saved.id == duplicate_saved.id
     assert row_count == 1
     assert duplicate_saved.source_url == (
-        "https://example.com/jobs/001"
+        "https://another-source.com/jobs/999"
     )
 
 

@@ -64,9 +64,9 @@ def stage6_client(
 
         with TestClient(app) as client:
             assert database_path.exists() is True
-            assert inspect(engine).get_table_names() == [
-                "jobs",
-            ]
+            assert {"jobs", "dataset_state", "ingestion_runs"} <= set(
+                inspect(engine).get_table_names()
+            )
 
             yield client
 

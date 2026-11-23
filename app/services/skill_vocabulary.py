@@ -4,6 +4,8 @@
 # 这里保存面向用户展示的技能规范名称。
 SKILL_ALIASES: dict[str, str] = {
     "python": "Python",
+    "pytorch": "PyTorch",
+    "opencv": "OpenCV",
     "fastapi": "FastAPI",
     "sql": "SQL",
     "git": "Git",

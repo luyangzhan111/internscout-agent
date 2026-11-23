@@ -15,6 +15,7 @@ from app.crawlers.oppo_source_client import (
     OppoPositionDetail,
     OppoPositionPage,
     OppoPositionSummary,
+    SourceDeadlineExceeded,
 )
 
 
@@ -78,7 +79,7 @@ def source_client(
 
     transport = httpx.MockTransport(handler)
     with httpx.Client(transport=transport) as http_client:
-        yield OppoJobSourceClient(http_client, timeout=timeout)
+        yield OppoJobSourceClient(http_client, timeout=timeout, retry_interval=0)
 
 
 def call_operation(
@@ -254,7 +255,7 @@ def test_blank_detail_position_id_fails_before_http_request() -> None:
 
 
 @pytest.mark.parametrize("operation", ["discovery", "detail"])
-def test_transport_failure_propagates_without_retry(operation: str) -> None:
+def test_transport_failure_propagates_after_two_attempts(operation: str) -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -266,11 +267,11 @@ def test_transport_failure_propagates_without_retry(operation: str) -> None:
         with pytest.raises(httpx.ConnectError, match="source unavailable"):
             call_operation(client, operation)
 
-    assert attempts == 1
+    assert attempts == 2
 
 
 @pytest.mark.parametrize("operation", ["discovery", "detail"])
-def test_http_status_failure_propagates_without_retry(operation: str) -> None:
+def test_http_status_failure_propagates_after_two_attempts(operation: str) -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -283,7 +284,7 @@ def test_http_status_failure_propagates_without_retry(operation: str) -> None:
             call_operation(client, operation)
 
     assert exc_info.value.response.status_code == 503
-    assert attempts == 1
+    assert attempts == 2
 
 
 @pytest.mark.parametrize("operation", ["discovery", "detail"])
@@ -715,3 +716,113 @@ def test_returned_position_id_mismatch_fails() -> None:
     ) as client:
         with pytest.raises(ValueError, match="detail.*positionId.*match"):
             client.get_position_detail("position-001")
+
+
+@pytest.mark.parametrize("operation", ["discovery", "detail"])
+@pytest.mark.parametrize("failure", ["transport", 429, 500, 503])
+def test_transient_failure_retries_once_then_returns_valid_data(
+    operation: str, failure: str | int
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            if failure == "transport":
+                raise httpx.ReadTimeout("transient timeout", request=request)
+            return httpx.Response(int(failure))
+        envelope = valid_discovery_envelope() if operation == "discovery" else valid_detail_envelope()
+        return httpx.Response(200, json=envelope)
+
+    with source_client(handler) as client:
+        result = call_operation(client, operation)
+
+    assert result is not None
+    assert attempts == 2
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 422])
+def test_permanent_http_failure_is_not_retried(status: int) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(status)
+
+    with source_client(handler) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            client.get_position_detail("position-001")
+    assert attempts == 1
+
+
+@pytest.mark.parametrize("operation", ["discovery", "detail"])
+def test_schema_errors_are_not_retried(operation: str) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(200, json={"code": 0, "data": {}})
+
+    with source_client(handler) as client:
+        with pytest.raises(ValueError):
+            call_operation(client, operation)
+    assert attempts == 1
+
+
+def test_deadline_caps_timeout_and_prevents_retry_after_expiration() -> None:
+    now = [0.0]
+    timeouts: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"]["read"])
+        now[0] = 1.0
+        raise httpx.ReadTimeout("deadline reached", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OppoJobSourceClient(
+            http_client, clock=lambda: now[0], retry_interval=0
+        )
+        with pytest.raises(SourceDeadlineExceeded):
+            client.get_position_detail("position-001", deadline=1.0)
+
+    assert timeouts == [1.0]
+
+
+def test_expired_deadline_stops_before_first_http_request() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("expired refresh must not make HTTP requests")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OppoJobSourceClient(http_client, clock=lambda: 5.0)
+        with pytest.raises(SourceDeadlineExceeded):
+            client.search_positions(page_num=1, page_size=20, deadline=5.0)
+
+
+def test_retry_wait_respects_remaining_deadline() -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OppoJobSourceClient(
+            http_client, clock=lambda: 0.0, sleep=sleeps.append, retry_interval=0.2
+        )
+        with pytest.raises(SourceDeadlineExceeded):
+            client.get_position_detail("position-001", deadline=0.1)
+
+    assert attempts == 1
+    assert sleeps == []
+
+
+@pytest.mark.parametrize("attempts", [0, 3, True, 1.5])
+def test_retry_count_is_bounded(attempts: Any) -> None:
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200))) as http_client:
+        with pytest.raises(ValueError, match="max_attempts"):
+            OppoJobSourceClient(http_client, max_attempts=attempts)

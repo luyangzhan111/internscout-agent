@@ -65,3 +65,21 @@ def test_rendering_handles_empty_and_missing_skill_lists() -> None:
     assert views[0].missing_skills == "无"
     assert views[0].salary == "未提供"
     assert views[0].reason == "没有匹配技能"
+
+
+def test_recommendations_preserve_sample_status_and_reject_unsafe_links() -> None:
+    response = DemoAgentResponse.model_validate({
+        "answer": "推荐完成。", "steps": 1, "tool_execution_count": 1,
+        "recommendations": [{
+            "job": {
+                "title": "样例岗位", "company": "示例公司", "city": "深圳",
+                "source": "mock", "status": "unknown", "source_url": "javascript:alert(1)",
+            },
+            "match_score": 100, "matched_skills": ["Python"],
+            "missing_skills": [], "reason": "full_match",
+        }],
+    })
+    view = build_recommendation_views(response)[0]
+    assert view.source == "mock"
+    assert view.status == "unknown"
+    assert view.source_url is None

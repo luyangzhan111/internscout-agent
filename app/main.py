@@ -10,6 +10,9 @@ from app.api import (
     crawl_router,
     health_router,
     jobs_router,
+    imports_router,
+    eligibility_router,
+    recommendations_router,
 )
 from app.api.dependencies import create_retrieval_runtime
 from app.database import (
@@ -45,6 +48,9 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(jobs_router)
+app.include_router(imports_router)
+app.include_router(eligibility_router)
+app.include_router(recommendations_router)
 app.include_router(crawl_router)
 app.include_router(agent_router)
 

@@ -1,0 +1,6 @@
+{
+  "reason": "Before any Stage23 holdout ranking, integration test found degree-labelled 需有/须有/应有/有 capability wording missing. Added these verbs while retaining state/degree/OR exclusions.",
+  "initial_archive_preserved": "evals/baselines/stage23_degree_only_initial",
+  "city_integration_present": false,
+  "new_holdout_read_by_implementer": false
+}

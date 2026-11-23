@@ -201,9 +201,9 @@ def test_lifespan_initializes_fresh_database(
 
         with TestClient(app) as client:
             assert database_path.exists() is True
-            assert inspect(
+            assert "jobs" in inspect(
                 engine
-            ).get_table_names() == ["jobs"]
+            ).get_table_names()
 
             response = client.get("/api/jobs")
 

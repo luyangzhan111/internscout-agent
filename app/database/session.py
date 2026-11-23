@@ -7,6 +7,7 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.database.models import Base
+from app.database.migrations import migrate_database
 
 
 DEFAULT_DATABASE_URL = "sqlite:///./internscout.db"
@@ -59,9 +60,16 @@ SessionLocal = create_session_factory(database_engine)
 def init_database(
     engine: Engine = database_engine,
 ) -> None:
-    """创建当前SQLAlchemy元数据中尚不存在的数据库表。"""
+    """备份并迁移旧SQLite结构，然后创建尚不存在的表。"""
 
+    from app.database import ingestion_models  # noqa: F401 — register shared metadata
+
+    migrate_database(engine)
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT OR IGNORE INTO dataset_state (id, revision) VALUES (1, 0)"
+        )
 
 
 def get_session() -> Generator[Session, None, None]:

@@ -27,7 +27,15 @@ class RetrievalRuntime:
         self._vector_store_factory = vector_store_factory
         self._current_retriever: JobKnowledgeRetriever | None = None
         self._dirty = True
+        self._indexed_revision: int | None = None
         self._lock = RLock()
+
+    @property
+    def indexed_revision(self) -> int | None:
+        """Database version used by the current complete snapshot."""
+
+        with self._lock:
+            return self._indexed_revision
 
     @property
     def current_retriever(self) -> JobKnowledgeRetriever | None:
@@ -56,7 +64,7 @@ class RetrievalRuntime:
         with self._lock:
             self._dirty = True
 
-    def rebuild(self, jobs: list[JobRead]) -> None:
+    def rebuild(self, jobs: list[JobRead], *, dataset_revision: int | None = None) -> None:
         """Build a fresh index from ``jobs`` and swap it in on success.
 
         The lifecycle lock covers construction and indexing so a concurrent
@@ -77,4 +85,5 @@ class RetrievalRuntime:
                 raise
 
             self._current_retriever = new_retriever
+            self._indexed_revision = dataset_revision
             self._dirty = False

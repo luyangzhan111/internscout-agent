@@ -1,6 +1,7 @@
 """岗位查询API响应模型。"""
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,8 +22,13 @@ class JobRead(BaseModel):
     skills: list[str]
     source: str
     source_url: str
+    source_job_id: str | None = None
+    status: Literal["active", "closed", "unknown"] = "unknown"
     published_at: date | None
     created_at: datetime
+    updated_at: datetime | None = None
+    last_seen_at: datetime | None = None
+    last_checked_at: datetime | None = None
 
 
 class JobListResponse(BaseModel):

@@ -1,6 +1,7 @@
 """岗位查询API路由。"""
 
 from typing import Annotated
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -102,6 +103,8 @@ def read_jobs(
             description="每页岗位数量",
         ),
     ] = 10,
+    source: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
+    status: Literal["active", "closed", "unknown"] | None = None,
 ) -> JobListResponse:
     """按照筛选条件分页查询数据库岗位。"""
 
@@ -125,6 +128,8 @@ def read_jobs(
         skill=skill,
         page=page,
         page_size=page_size,
+        source=_normalize_optional_query(source, "source"),
+        status=status,
     )
 
     pages = (

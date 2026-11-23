@@ -1,8 +1,9 @@
 """岗位数据的Pydantic模型。"""
 
 from datetime import date
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class JobCreate(BaseModel):
@@ -47,7 +48,16 @@ class JobCreate(BaseModel):
         min_length=1,
         description="岗位原始链接",
     )
+    source_job_id: str | None = Field(default=None, min_length=1, max_length=200)
+    status: Literal["active", "closed", "unknown"] = "unknown"
     published_at: date | None = Field(
         default=None,
         description="岗位发布日期",
     )
+
+    @field_validator("source")
+    @classmethod
+    def normalize_source(cls, value: str) -> str:
+        """Source names are case-insensitive; source job IDs are not."""
+
+        return value.strip().lower()

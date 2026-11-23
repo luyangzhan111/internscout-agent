@@ -146,7 +146,9 @@ def test_init_database_can_run_more_than_once(
     init_database(engine)
     init_database(engine)
 
-    assert inspect(engine).get_table_names() == ["jobs"]
+    assert set(inspect(engine).get_table_names()) == {
+        "jobs", "dataset_state", "ingestion_runs"
+    }
 
     engine.dispose()
 

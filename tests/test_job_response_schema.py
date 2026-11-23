@@ -33,6 +33,7 @@ def create_job_model(
             "SQL",
         ],
         "source": "mock",
+        "status": "unknown",
         "source_url": "https://example.com/jobs/001",
         "published_at": date(2026, 7, 20),
         "created_at": datetime(2026, 7, 31, 12, 0, 0),

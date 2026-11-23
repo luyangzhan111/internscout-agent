@@ -1,15 +1,18 @@
 """数据库模型、连接和岗位持久化模块。"""
 
-from app.database.models import Base, JobModel
+from app.database.models import Base, DatasetStateModel, JobModel
 from app.database.repository import (
     build_identity_key,
     get_job_by_id,
+    get_dataset_revision,
     get_job_by_identity_key,
     job_model_from_schema,
     list_jobs,
     query_jobs,
     save_job,
     save_jobs,
+    upsert_job,
+    JobUpsertResult,
 )
 from app.database.session import (
     DEFAULT_DATABASE_URL,
@@ -25,12 +28,15 @@ __all__ = [
     "Base",
     "DEFAULT_DATABASE_URL",
     "JobModel",
+    "DatasetStateModel",
+    "JobUpsertResult",
     "SessionLocal",
     "build_identity_key",
     "create_database_engine",
     "create_session_factory",
     "database_engine",
     "get_job_by_id",
+    "get_dataset_revision",
     "get_job_by_identity_key",
     "get_session",
     "init_database",
@@ -39,4 +45,5 @@ __all__ = [
     "query_jobs",
     "save_job",
     "save_jobs",
+    "upsert_job",
 ]

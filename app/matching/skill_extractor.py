@@ -14,6 +14,8 @@ from app.services.skill_vocabulary import (
 # Canonical display values continue to come exclusively from SKILL_ALIASES.
 TEXT_SKILL_ALIASES: tuple[str, ...] = (
     "python",
+    "pytorch",
+    "opencv",
     "fastapi",
     "sql",
     "git",
